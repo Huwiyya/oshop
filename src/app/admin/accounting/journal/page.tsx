@@ -56,7 +56,7 @@ export default async function JournalEntriesPage() {
                                 return (
                                     <TableRow key={entry.id}>
                                         <TableCell className="font-mono">{entry.entryNumber}</TableCell>
-                                        <TableCell>{format(new Date(entry.date), 'yyyy-MM-dd')}</TableCell>
+                                        <TableCell>{entry.date ? format(new Date(entry.date), 'yyyy-MM-dd') : '-'}</TableCell>
                                         <TableCell>{entry.description}</TableCell>
                                         <TableCell className="text-emerald-600 font-bold">{totalDebit.toFixed(3)}</TableCell>
                                         <TableCell className="text-rose-600 font-bold">{totalCredit.toFixed(3)}</TableCell>
