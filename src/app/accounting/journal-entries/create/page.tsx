@@ -31,8 +31,8 @@ type LineItem = {
     id: number;
     accountId: string;
     description: string;
-    debit: number;
-    credit: number;
+    debit: string | number;
+    credit: string | number;
     // Inventory
     inventoryItemId?: string;
     quantity?: number;
@@ -52,9 +52,8 @@ export default function CreateJournalEntryPage() {
 
     // Lines
     const [lines, setLines] = useState<LineItem[]>([
-        { id: 1, accountId: '', description: '', debit: 0, credit: 0 },
-        { id: 2, accountId: '', description: '', debit: 0, credit: 0 }
-    ]);
+        { id: 1, accountId: '', description: '', debit: '', credit: '' },
+        { id: 2, accountId: '', description: '', debit: '', credit: '' }]);
 
     const totalDebit = lines.reduce((sum, l) => sum + (Number(l.debit) || 0), 0);
     const totalCredit = lines.reduce((sum, l) => sum + (Number(l.credit) || 0), 0);
@@ -90,7 +89,7 @@ export default function CreateJournalEntryPage() {
         }
 
         // Filter empty lines
-        const validLines = lines.filter(l => l.accountId && (l.debit > 0 || l.credit > 0));
+        const validLines = lines.filter(l => l.accountId && (Number(l.debit) > 0 || Number(l.credit) > 0));
         if (validLines.length < 2) {
             toast({ title: 'خطأ', description: 'يجب أن يحتوي القيد على طرفين على الأقل', variant: 'destructive' });
             return;
@@ -101,7 +100,11 @@ export default function CreateJournalEntryPage() {
             await createJournalEntry({
                 date,
                 description: mainDescription,
-                lines: validLines,
+                lines: validLines.map(l => ({
+                    ...l,
+                    debit: Number(l.debit) || 0,
+                    credit: Number(l.credit) || 0
+                })),
                 currency
             });
             toast({ title: 'تم الحفظ', description: 'تم إنشاء القيد بنجاح' });
@@ -198,15 +201,15 @@ export default function CreateJournalEntryPage() {
                                                 type="text"
                                                 inputMode="decimal"
                                                 className="h-9"
-                                                value={line.debit || ''}
+                                                value={line.debit}
                                                 onChange={e => {
-                                                    const val = parseFloat(e.target.value) || 0;
+                                                    const val = e.target.value;
                                                     updateLine(line.id, 'debit', val);
-                                                    if (val > 0) {
-                                                        updateLine(line.id, 'credit', 0);
+                                                    if (parseFloat(val) > 0) {
+                                                        updateLine(line.id, 'credit', '');
                                                     }
                                                 }}
-                                                disabled={line.credit > 0}
+                                                disabled={parseFloat(String(line.credit)) > 0}
                                                 placeholder="0.00"
                                             />
                                         </TableCell>
@@ -215,15 +218,15 @@ export default function CreateJournalEntryPage() {
                                                 type="text"
                                                 inputMode="decimal"
                                                 className="h-9"
-                                                value={line.credit || ''}
+                                                value={line.credit}
                                                 onChange={e => {
-                                                    const val = parseFloat(e.target.value) || 0;
+                                                    const val = e.target.value;
                                                     updateLine(line.id, 'credit', val);
-                                                    if (val > 0) {
-                                                        updateLine(line.id, 'debit', 0);
+                                                    if (parseFloat(val) > 0) {
+                                                        updateLine(line.id, 'debit', '');
                                                     }
                                                 }}
-                                                disabled={line.debit > 0}
+                                                disabled={parseFloat(String(line.debit)) > 0}
                                                 placeholder="0.00"
                                             />
                                         </TableCell>
@@ -304,7 +307,7 @@ function InventoryPopover({ line, items, onSave }: { line: LineItem, items: any[
                 <div className="space-y-4">
                     <h4 className="font-semibold text-sm">تعديل مخزني لهذا السطر</h4>
                     <p className="text-xs text-slate-500">
-                        سيتم {line.debit > 0 ? 'زيادة' : 'إنقاص'} مخزون الصنف المختار بالكمية المحددة.
+                        سيتم {Number(line.debit) > 0 ? 'زيادة' : 'إنقاص'} مخزون الصنف المختار بالكمية المحددة.
                     </p>
                     <div className="space-y-2">
                         <Label>الصنف</Label>
