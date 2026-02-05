@@ -199,9 +199,11 @@ export default function CreateJournalEntryPage() {
                                                 value={line.debit || ''}
                                                 onChange={e => {
                                                     updateLine(line.id, 'debit', Number(e.target.value));
-                                                    updateLine(line.id, 'credit', 0);
+                                                    if (Number(e.target.value) > 0) {
+                                                        updateLine(line.id, 'credit', 0);
+                                                    }
                                                 }}
-                                                disabled={Boolean(line.credit)}
+                                                disabled={line.credit > 0}
                                             />
                                         </TableCell>
                                         <TableCell>
@@ -210,9 +212,11 @@ export default function CreateJournalEntryPage() {
                                                 value={line.credit || ''}
                                                 onChange={e => {
                                                     updateLine(line.id, 'credit', Number(e.target.value));
-                                                    updateLine(line.id, 'debit', 0);
+                                                    if (Number(e.target.value) > 0) {
+                                                        updateLine(line.id, 'debit', 0);
+                                                    }
                                                 }}
-                                                disabled={Boolean(line.debit)}
+                                                disabled={line.debit > 0}
                                             />
                                         </TableCell>
                                         <TableCell className="flex items-center justify-center gap-1">
