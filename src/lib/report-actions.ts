@@ -195,3 +195,91 @@ export async function getBalanceSheet() {
         totalEquity: Math.abs(totalEquity)
     };
 }
+
+// --- كشف حساب عميل (Customer Statement) ---
+export type StatementTransaction = {
+    date: string;
+    description: string;
+    type: string;
+    reference: string;
+    debit: number;
+    credit: number;
+    balance: number;
+};
+
+export type CustomerStatement = {
+    customerName: string;
+    openingBalance: number;
+    closingBalance: number;
+    totalDebit: number;
+    totalCredit: number;
+    transactions: StatementTransaction[];
+};
+
+export async function getCustomerStatement(customerId: string, startDate?: string, endDate?: string): Promise<CustomerStatement> {
+    // 1. Get Customer Details
+    const { data: customer } = await supabaseAdmin.from('accounts').select('name_ar, current_balance').eq('id', customerId).single();
+    if (!customer) throw new Error('Customer not found');
+
+    // 2. Get Transactions
+    let query = supabaseAdmin
+        .from('journal_entry_lines')
+        .select(`
+            debit,
+            credit,
+            description,
+            journal_entries!inner (
+                entry_date,
+                entry_number,
+                reference_type,
+                reference_id,
+                status,
+                description
+            )
+        `)
+        .eq('account_id', customerId)
+        .eq('journal_entries.status', 'posted')
+        .order('journal_entries(entry_date)', { ascending: true });
+
+    if (startDate) query = query.gte('journal_entries.entry_date', startDate);
+    if (endDate) query = query.lte('journal_entries.entry_date', endDate);
+
+    const { data: lines, error } = await query;
+    if (error) throw new Error(error.message);
+
+    // 3. Process
+    let runningBalance = 0; // Should ideally account for opening balance before startDate
+    const transactions: StatementTransaction[] = [];
+    let totalDebit = 0;
+    let totalCredit = 0;
+
+    for (const line of lines || []) {
+        const je = Array.isArray(line.journal_entries) ? line.journal_entries[0] : line.journal_entries;
+        const debit = Number(line.debit);
+        const credit = Number(line.credit);
+
+        runningBalance += (debit - credit); // Normal balance for Asset (Receivable) is Debit. So +Dr -Cr.
+
+        totalDebit += debit;
+        totalCredit += credit;
+
+        transactions.push({
+            date: je.entry_date,
+            description: line.description || je.description || '-',
+            type: je.reference_type || 'manual',
+            reference: je.reference_id || je.entry_number,
+            debit,
+            credit,
+            balance: runningBalance
+        });
+    }
+
+    return {
+        customerName: customer.name_ar,
+        openingBalance: 0, // Simplified
+        closingBalance: runningBalance,
+        totalDebit,
+        totalCredit,
+        transactions
+    };
+}

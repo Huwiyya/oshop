@@ -11,7 +11,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { getEmployees, getExpenseAccounts, getAssetAccounts, createPayslip } from '@/lib/payroll-actions';
 import { useToast } from '@/components/ui/use-toast';
 import { formatCurrency } from '@/lib/utils';
-import { ArrowLeft, Wallet, Calculator, FileText } from 'lucide-react';
+import { ArrowLeft, Wallet, Calculator, FileText, Plus } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 
 export default function PayrollPage() {

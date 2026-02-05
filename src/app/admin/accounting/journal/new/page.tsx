@@ -10,9 +10,19 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { ArrowRight, Trash2, Plus } from 'lucide-react';
 import Link from 'next/link';
-import { AccountType, JournalLine } from '@/lib/accounting-types';
+import { AccountCategory } from '@/lib/accounting-types';
 
-const ACCOUNT_TYPES: { value: AccountType; label: string }[] = [
+// Define local type for form handling
+type JournalLine = {
+    accountId: string;
+    accountName: string;
+    debit: number;
+    credit: number;
+    accountType?: AccountCategory;
+    description?: string;
+};
+
+const ACCOUNT_TYPES: { value: AccountCategory; label: string }[] = [
     { value: 'asset', label: 'أصول (Asset)' },
     { value: 'liability', label: 'خصوم (Liability)' },
     { value: 'equity', label: 'حقوق ملكية (Equity)' },
@@ -81,7 +91,7 @@ export default function NewJournalEntryPage() {
             const acc = MOCK_ACCOUNTS.find(a => a.id === l.accountId);
             return {
                 ...l,
-                accountType: (acc?.type || 'asset') as AccountType, // Explicit cast to fix build error
+                accountType: (acc?.type || 'asset') as AccountCategory, // Explicit cast to fix build error
                 debit: Number(l.debit),
                 credit: Number(l.credit)
             };
@@ -90,8 +100,15 @@ export default function NewJournalEntryPage() {
         const res = await createJournalEntry({
             date,
             description,
-            lines: finalLines,
-            totalAmount: totalDebit
+            lines: finalLines.map((l, index) => ({
+                accountId: l.accountId,
+                description: description,
+                debit: Number(l.debit),
+                credit: Number(l.credit),
+                // line_number not expected by journal-actions createJournalEntry local type, 
+                // but if we need it, we should add it. journal-actions.ts defines JournalEntryLine locally without line_number.
+                // It adds it manually in the loop. So we don't pass it.
+            }))
         });
 
         if (res.success) {

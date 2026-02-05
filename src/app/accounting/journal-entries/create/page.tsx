@@ -11,6 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Textarea } from '@/components/ui/textarea';
 import { Plus, Trash, Save, ArrowLeft, Box, Check } from 'lucide-react';
+import { formatCurrency } from '@/lib/utils';
 import { useToast } from '@/components/ui/use-toast';
 import { createJournalEntry } from '@/lib/journal-actions';
 import { supabase } from '@/lib/supabase'; // Client side for direct fetching if needed or use action

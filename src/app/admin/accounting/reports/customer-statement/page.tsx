@@ -110,9 +110,7 @@ export default function CustomerStatementPage() {
                     {/* Customer Info */}
                     <div className="mb-8 p-4 bg-gray-50 rounded-lg border border-gray-200 print:bg-transparent print:border-gray-300">
                         <p className="text-sm text-gray-500 uppercase mb-1">بيانات العميل (Bill To)</p>
-                        <h3 className="text-xl font-bold">{statement.customer.name || statement.customer.username}</h3>
-                        <p>{statement.customer.phone || '---'}</p>
-                        <p className="text-sm text-gray-500">{statement.customer.address || ''}</p>
+                        <h3 className="text-xl font-bold">{statement.customerName}</h3>
                     </div>
 
                     {/* Summary Cards */}

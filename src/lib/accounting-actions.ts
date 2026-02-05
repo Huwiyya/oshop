@@ -221,3 +221,101 @@ export async function getAccountDetails(accountId: string) {
     if (error) return null;
     return data;
 }
+
+// --- Bank Accounts & Cash Accounts Management ---
+
+export async function getBankAccounts() {
+    // Parent 1112 for Banks
+    const { data: parent } = await supabaseAdmin.from('accounts').select('id').eq('account_code', '1112').single();
+    if (!parent) return [];
+
+    const { data } = await supabaseAdmin
+        .from('accounts')
+        .select('*')
+        .eq('parent_id', parent.id)
+        .order('created_at', { ascending: false });
+    return data || [];
+}
+
+export async function createBankAccount(data: { name: string; currency: 'LYD' | 'USD'; accountNumber?: string; bankName?: string }) {
+    // Parent 1112
+    const { data: parent } = await supabaseAdmin.from('accounts').select('id, account_code').eq('account_code', '1112').single();
+    if (!parent) throw new Error('Parent account "Banks" (1112) not found');
+
+    // Generate Code
+    const { data: lastChild } = await supabaseAdmin
+        .from('accounts')
+        .select('account_code')
+        .eq('parent_id', parent.id)
+        .order('account_code', { ascending: false })
+        .limit(1)
+        .single();
+
+    let newCode = parent.account_code + '001';
+    if (lastChild) newCode = (parseInt(lastChild.account_code) + 1).toString();
+
+    // Insert
+    const { data: newAccount, error } = await supabaseAdmin.from('accounts').insert({
+        name_ar: data.name,
+        name_en: data.name, // Use same for now
+        account_code: newCode,
+        parent_id: parent.id,
+        account_type_id: 'type_asset',
+        level: 3,
+        is_parent: false,
+        currency: data.currency,
+        current_balance: 0,
+        description: `Bank: ${data.bankName || ''} - Account: ${data.accountNumber || ''}`
+    }).select().single();
+
+    if (error) throw new Error(error.message);
+    return newAccount;
+}
+
+export async function getCashAccounts() {
+    // Parent 1111 for Cash
+    const { data: parent } = await supabaseAdmin.from('accounts').select('id').eq('account_code', '1111').single();
+    if (!parent) return [];
+
+    const { data } = await supabaseAdmin
+        .from('accounts')
+        .select('*')
+        .eq('parent_id', parent.id)
+        .order('created_at', { ascending: false });
+    return data || [];
+}
+
+export async function createCashAccount(data: { name: string; currency: 'LYD' | 'USD'; description?: string }) {
+    // Parent 1111
+    const { data: parent } = await supabaseAdmin.from('accounts').select('id, account_code').eq('account_code', '1111').single();
+    if (!parent) throw new Error('Parent account "Cash" (1111) not found');
+
+    // Generate Code
+    const { data: lastChild } = await supabaseAdmin
+        .from('accounts')
+        .select('account_code')
+        .eq('parent_id', parent.id)
+        .order('account_code', { ascending: false })
+        .limit(1)
+        .single();
+
+    let newCode = parent.account_code + '001';
+    if (lastChild) newCode = (parseInt(lastChild.account_code) + 1).toString();
+
+    // Insert
+    const { data: newAccount, error } = await supabaseAdmin.from('accounts').insert({
+        name_ar: data.name,
+        name_en: data.name,
+        account_code: newCode,
+        parent_id: parent.id,
+        account_type_id: 'type_asset',
+        level: 3,
+        is_parent: false,
+        currency: data.currency,
+        current_balance: 0,
+        description: data.description
+    }).select().single();
+
+    if (error) throw new Error(error.message);
+    return newAccount;
+}

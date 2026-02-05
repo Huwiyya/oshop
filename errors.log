@@ -1,0 +1,13 @@
+
+> nextn@0.1.0 typecheck
+> tsc --noEmit
+
+src/app/admin/accounting/journal/new/page.tsx(29,7): error TS2322: Type '"income"' is not assignable to type 'AccountCategory'.
+src/app/admin/accounting/journal/page.tsx(53,72): error TS7006: Parameter 's' implicitly has an 'any' type.
+src/app/admin/accounting/journal/page.tsx(53,75): error TS7006: Parameter 'l' implicitly has an 'any' type.
+src/app/admin/accounting/journal/page.tsx(54,73): error TS7006: Parameter 's' implicitly has an 'any' type.
+src/app/admin/accounting/journal/page.tsx(54,76): error TS7006: Parameter 'l' implicitly has an 'any' type.
+src/app/admin/accounting/reports/customer-statement/page.tsx(113,70): error TS2339: Property 'customer' does not exist on type 'CustomerStatement'.
+src/app/admin/accounting/reports/customer-statement/page.tsx(113,97): error TS2339: Property 'customer' does not exist on type 'CustomerStatement'.
+src/app/admin/accounting/reports/customer-statement/page.tsx(114,39): error TS2339: Property 'customer' does not exist on type 'CustomerStatement'.
+src/app/admin/accounting/reports/customer-statement/page.tsx(115,73): error TS2339: Property 'customer' does not exist on type 'CustomerStatement'.
