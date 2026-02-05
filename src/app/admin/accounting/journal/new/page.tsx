@@ -26,7 +26,7 @@ const ACCOUNT_TYPES: { value: AccountCategory; label: string }[] = [
     { value: 'asset', label: 'أصول (Asset)' },
     { value: 'liability', label: 'خصوم (Liability)' },
     { value: 'equity', label: 'حقوق ملكية (Equity)' },
-    { value: 'income', label: 'إيرادات (Income)' },
+    { value: 'revenue', label: 'إيرادات (Income)' },
     { value: 'expense', label: 'مصروفات (Expense)' },
 ];
 
@@ -34,8 +34,8 @@ const ACCOUNT_TYPES: { value: AccountCategory; label: string }[] = [
 const MOCK_ACCOUNTS = [
     { id: 'cash_lyd', name: 'الخزينة الرئيسية (LYD)', type: 'asset' },
     { id: 'cash_usd', name: 'الخزينة الدولارية (USD)', type: 'asset' },
-    { id: 'sales', name: 'المبيعات', type: 'income' },
-    { id: 'shipping_income', name: 'إيرادات الشحن', type: 'income' },
+    { id: 'sales', name: 'المبيعات', type: 'revenue' },
+    { id: 'shipping_income', name: 'إيرادات الشحن', type: 'revenue' },
     { id: 'transport_expense', name: 'مصروفات نقل', type: 'expense' },
     { id: 'capital', name: 'رأس المال', type: 'equity' },
     { id: 'suppliers', name: 'موردين', type: 'liability' },
