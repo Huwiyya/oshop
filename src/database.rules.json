@@ -1,0 +1,110 @@
+{
+  "rules": {
+    "rules_version": "2",
+    "service": "cloud.firestore",
+    "match": {
+      "databases": {
+        "{database}": {
+          "documents": {
+            "function isUser()": "return request.auth != null;",
+            "function isOwner(userId)": "return request.auth.uid == userId;",
+            "function isAdmin()": "return exists(/databases/$(database)/documents/managers_v4/$(request.auth.uid));",
+            "function isRepresentative()": "return exists(/databases/$(database)/documents/representatives_v4/$(request.auth.uid));",
+            "function hasPermission(permission)": "return isAdmin() && (get(/databases/$(database)/documents/managers_v4/$(request.auth.uid)).data.username == 'admin@tamweelsys.app' || permission in get(/databases/$(database)/documents/managers_v4/$(request.auth.uid)).data.permissions);",
+            "match": {
+              "/{document=**}": {
+                "allow": "read, write: if false;"
+              }
+            },
+            "// 👤 Users": null,
+            "match /users_v4/{userId}": {
+              "allow": "read: if isOwner(userId) || hasPermission('users'); create, update, delete: if hasPermission('users');"
+            },
+            "// 👨‍💼 Managers": null,
+            "match /managers_v4/{managerId}": {
+              "allow": "read: if hasPermission('employees'); write: if hasPermission('employees'); create: if request.resource.data.username == 'admin@tamweelsys.app' || request.auth == null;"
+            },
+            "// 👔 Representatives": null,
+            "match /representatives_v4/{repId}": {
+              "allow": "read: if isOwner(repId) || hasPermission('representatives'); write: if hasPermission('representatives');"
+            },
+            "// 🛒 Orders": null,
+            "match /orders_v4/{orderId}": {
+              "allow": "read: if hasPermission('orders') || isOwner(resource.data.userId) || (isRepresentative() && request.auth.uid == resource.data.representativeId); write: if hasPermission('orders'); update: if hasPermission('orders') || (isRepresentative() && request.auth.uid == resource.data.representativeId && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'deliveryDate', 'collectedAmount']));"
+            },
+            "// 🧾 Transactions": null,
+            "match /transactions_v4/{transactionId}": {
+              "allow": "read: if hasPermission('financial_reports') || isOwner(resource.data.customerId) || (resource.data.customerId.startsWith('TEMP-') && hasPermission('temporary_users')); write: if hasPermission('financial_reports');"
+            },
+            "// 💬 Conversations": null,
+            "match /conversations_v4/{conversationId}": {
+              "allow": "read, write: if isOwner(resource.data.userId) || hasPermission('support');"
+            },
+            "// 🔔 Notifications": null,
+            "match /notifications_v4/{notificationId}": {
+              "allow": "read: if isUser(); write: if hasPermission('notifications');"
+            },
+            "// ⚙️ Settings": null,
+            "match /settings_v4/{settingId}": {
+              "allow": "read: if isUser(); write: if hasPermission('exchange_rate');"
+            },
+            "// 💸 Expenses": null,
+            "match /expenses_v4/{expenseId}": {
+              "allow": "read, write: if hasPermission('expenses');"
+            },
+            "// ⚡ Instant Sales": null,
+            "match /instant_sales_v4/{saleId}": {
+              "allow": "read, write: if hasPermission('instant_sales');"
+            },
+            "// 📝 Temp Orders": null,
+            "match /tempOrders_v4/{tempOrderId}": {
+              "allow": "read, write: if hasPermission('temporary_users');"
+            },
+            "// 💰 Deposits": null,
+            "match /deposits_v4/{depositId}": {
+              "allow": "read: if hasPermission('deposits') || (isRepresentative() && request.auth.uid == resource.data.representativeId); write: if hasPermission('deposits'); update: if hasPermission('deposits') || (isRepresentative() && request.auth.uid == resource.data.representativeId && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'collectedDate']));"
+            },
+            "// 🏦 Creditors": null,
+            "match /creditors_v4/{creditorId}": {
+              "allow": "read, write: if hasPermission('creditors');"
+            },
+            "// 📉 External Debts": null,
+            "match /external_debts_v4/{debtId}": {
+              "allow": "read, write: if hasPermission('creditors');"
+            },
+            "// 🏷 Manual Labels": null,
+            "match /manual_labels_v4/{labelId}": {
+              "allow": "read, write: if hasPermission('shipping_label');"
+            },
+            "// 💳 Shein Cards": null,
+            "match /shein_cards_v4/{cardId}": {
+              "allow": "read, write: if hasPermission('shein_cards');"
+            },
+            "match /shein_transactions_v4/{transactionId}": {
+              "allow": "read, write: if hasPermission('shein_cards');"
+            },
+            "// 🏛 Treasury": null,
+            "match /treasury_cards_v4/{cardId}": {
+              "allow": "read, write: if hasPermission('treasury');"
+            },
+            "match /treasury_transactions_v4/{transactionId}": {
+              "allow": "read, write: if hasPermission('treasury');"
+            },
+            "// 👛 Wallet Transactions": null,
+            "match /wallet_transactions_v4/{transactionId}": {
+              "allow": "read: if isOwner(resource.data.userId) || hasPermission('financial_reports'); write: if hasPermission('financial_reports');"
+            },
+            "// 📦 Products": null,
+            "match /products_v4/{productId}": {
+              "allow": "read: if isUser(); write: if hasPermission('products');"
+            },
+            "// 🌐 Global Sites": null,
+            "match /global_sites_v4/{siteId}": {
+              "allow": "read: if isUser(); write: if hasPermission('settings');"
+            }
+          }
+        }
+      }
+    }
+  }
+}
