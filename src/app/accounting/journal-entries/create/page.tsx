@@ -195,28 +195,36 @@ export default function CreateJournalEntryPage() {
                                         </TableCell>
                                         <TableCell>
                                             <Input
-                                                type="number" step="0.01" min="0" className="h-9"
+                                                type="text"
+                                                inputMode="decimal"
+                                                className="h-9"
                                                 value={line.debit || ''}
                                                 onChange={e => {
-                                                    updateLine(line.id, 'debit', Number(e.target.value));
-                                                    if (Number(e.target.value) > 0) {
+                                                    const val = parseFloat(e.target.value) || 0;
+                                                    updateLine(line.id, 'debit', val);
+                                                    if (val > 0) {
                                                         updateLine(line.id, 'credit', 0);
                                                     }
                                                 }}
                                                 disabled={line.credit > 0}
+                                                placeholder="0.00"
                                             />
                                         </TableCell>
                                         <TableCell>
                                             <Input
-                                                type="number" step="0.01" min="0" className="h-9"
+                                                type="text"
+                                                inputMode="decimal"
+                                                className="h-9"
                                                 value={line.credit || ''}
                                                 onChange={e => {
-                                                    updateLine(line.id, 'credit', Number(e.target.value));
-                                                    if (Number(e.target.value) > 0) {
+                                                    const val = parseFloat(e.target.value) || 0;
+                                                    updateLine(line.id, 'credit', val);
+                                                    if (val > 0) {
                                                         updateLine(line.id, 'debit', 0);
                                                     }
                                                 }}
                                                 disabled={line.debit > 0}
+                                                placeholder="0.00"
                                             />
                                         </TableCell>
                                         <TableCell className="flex items-center justify-center gap-1">
