@@ -50,8 +50,8 @@ export default async function JournalEntriesPage() {
                         </TableHeader>
                         <TableBody>
                             {entries.map((entry) => {
-                                const totalDebit = entry.lines.reduce((s, l) => s + l.debit, 0);
-                                const totalCredit = entry.lines.reduce((s, l) => s + l.credit, 0);
+                                const totalDebit = entry.lines.reduce((s: number, l: { debit: number }) => s + l.debit, 0);
+                                const totalCredit = entry.lines.reduce((s: number, l: { credit: number }) => s + l.credit, 0);
 
                                 return (
                                     <TableRow key={entry.id}>
