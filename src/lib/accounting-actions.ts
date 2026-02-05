@@ -268,8 +268,8 @@ export async function createBankAccount(data: { name: string; currency: 'LYD' | 
         description: `Bank: ${data.bankName || ''} - Account: ${data.accountNumber || ''}`
     }).select().single();
 
-    if (error) throw new Error(error.message);
-    return newAccount;
+    if (error) return { success: false, error: error.message };
+    return { success: true, data: newAccount };
 }
 
 export async function getCashAccounts() {
