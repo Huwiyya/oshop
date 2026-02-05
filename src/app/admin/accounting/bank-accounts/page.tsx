@@ -6,7 +6,23 @@ import Link from 'next/link';
 import NewBankAccountDialog from './_components/new-bank-account-dialog';
 
 export default async function BankAccountsPage() {
-    const accounts = await getBankAccounts();
+    const accountsData = await getBankAccounts();
+
+    // Map database fields to display fields and extract bank info from description
+    const accounts = accountsData.map((acc: any) => {
+        // Try to extract account number from description
+        const descMatch = acc.description?.match(/Account:\s*(\S+)/);
+        const accountNumber = descMatch ? descMatch[1] : null;
+
+        return {
+            id: acc.id,
+            name: acc.name_ar || acc.name_en || 'حساب بنكي',
+            currency: acc.currency || 'LYD',
+            balance: acc.current_balance || 0,
+            accountNumber: accountNumber,
+            description: acc.description
+        };
+    });
 
     return (
         <div className="space-y-6">

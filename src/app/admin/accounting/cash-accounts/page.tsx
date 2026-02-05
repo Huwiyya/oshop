@@ -7,7 +7,16 @@ import Link from 'next/link';
 import NewCashAccountDialog from './_components/new-account-dialog';
 
 export default async function CashAccountsPage() {
-    const accounts = await getCashAccounts();
+    const accountsData = await getCashAccounts();
+
+    // Map database fields to display fields
+    const accounts = accountsData.map((acc: any) => ({
+        id: acc.id,
+        name: acc.name_ar || acc.name_en || 'حساب نقدي',
+        currency: acc.currency || 'LYD',
+        balance: acc.current_balance || 0,
+        description: acc.description
+    }));
 
     return (
         <div className="space-y-6">
