@@ -243,7 +243,7 @@ export default function PayrollPage() {
                                             <SelectValue placeholder="حساب (اختياري)" />
                                         </SelectTrigger>
                                         <SelectContent>
-                                            <SelectItem value="">بدون (خصم مباشر)</SelectItem>
+                                            <SelectItem value="none">بدون (خصم مباشر)</SelectItem>
                                             {expenseAccounts.map(a => <SelectItem key={a.id} value={a.id}>{a.name_ar}</SelectItem>)}
                                         </SelectContent>
                                     </Select>

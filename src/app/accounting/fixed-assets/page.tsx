@@ -28,7 +28,26 @@ export default function FixedAssetsPage() {
             getAssetCategories()
         ]);
         setAssets(assetsData || []);
-        setCategories(catsData || []);
+
+        // Auto-initialize categories if none exist
+        if (!catsData || catsData.length === 0) {
+            try {
+                const response = await fetch('/api/accounting/init-categories', { method: 'POST' });
+                const result = await response.json();
+                if (result.success) {
+                    const newCats = await getAssetCategories();
+                    setCategories(newCats || []);
+                } else {
+                    setCategories([]);
+                }
+            } catch (error) {
+                console.error('Error initializing categories:', error);
+                setCategories([]);
+            }
+        } else {
+            setCategories(catsData);
+        }
+
         setLoading(false);
     };
 
