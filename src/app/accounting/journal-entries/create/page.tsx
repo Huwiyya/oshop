@@ -65,7 +65,7 @@ export default function CreateJournalEntryPage() {
     }, []);
 
     const addLine = () => {
-        setLines([...lines, { id: Date.now(), accountId: '', description: '', debit: 0, credit: 0 }]);
+        setLines([...lines, { id: Date.now(), accountId: '', description: '', debit: '', credit: '' }]);
     };
 
     const removeLine = (id: number) => {
@@ -203,11 +203,7 @@ export default function CreateJournalEntryPage() {
                                                 className="h-9"
                                                 value={String(line.debit || '')}
                                                 onChange={e => {
-                                                    const val = e.target.value;
-                                                    updateLine(line.id, 'debit', val);
-                                                    if (parseFloat(val) > 0) {
-                                                        updateLine(line.id, 'credit', '');
-                                                    }
+                                                    updateLine(line.id, 'debit', e.target.value);
                                                 }}
                                                 disabled={parseFloat(String(line.credit)) > 0}
                                                 placeholder="0.00"
@@ -220,11 +216,7 @@ export default function CreateJournalEntryPage() {
                                                 className="h-9"
                                                 value={String(line.credit || '')}
                                                 onChange={e => {
-                                                    const val = e.target.value;
-                                                    updateLine(line.id, 'credit', val);
-                                                    if (parseFloat(val) > 0) {
-                                                        updateLine(line.id, 'debit', '');
-                                                    }
+                                                    updateLine(line.id, 'credit', e.target.value);
                                                 }}
                                                 disabled={parseFloat(String(line.debit)) > 0}
                                                 placeholder="0.00"
