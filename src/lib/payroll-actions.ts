@@ -63,44 +63,48 @@ export async function getEmployees() {
 }
 
 export async function createEmployee(data: { name_ar: string; phone?: string; salary?: number }) {
-    // 1. Get Parent Account (Liabilities -> Accrued Salaries)
-    const parentCode = '2130';
-    const { data: parent } = await supabaseAdmin.from('accounts').select('id, account_code').eq('account_code', parentCode).single();
-    if (!parent) throw new Error('Parent account for employees (2130) not found');
+    try {
+        // 1. Get Parent Account (Liabilities -> Accrued Salaries)
+        const parentCode = '2130';
+        const { data: parent } = await supabaseAdmin.from('accounts').select('id, account_code').eq('account_code', parentCode).single();
+        if (!parent) throw new Error('Parent account for employees (2130) not found');
 
-    // 2. Generate Code
-    const { data: lastChild } = await supabaseAdmin
-        .from('accounts')
-        .select('account_code')
-        .eq('parent_id', parent.id)
-        .order('account_code', { ascending: false })
-        .limit(1)
-        .single();
+        // 2. Generate Code
+        const { data: lastChild } = await supabaseAdmin
+            .from('accounts')
+            .select('account_code')
+            .eq('parent_id', parent.id)
+            .order('account_code', { ascending: false })
+            .limit(1)
+            .single();
 
-    let newCode;
-    if (lastChild) {
-        newCode = (parseInt(lastChild.account_code) + 1).toString();
-    } else {
-        newCode = parent.account_code + '001';
+        let newCode;
+        if (lastChild) {
+            newCode = (parseInt(lastChild.account_code) + 1).toString();
+        } else {
+            newCode = parent.account_code + '001';
+        }
+
+        // 3. Create Account
+        const { data: newAccount, error } = await supabaseAdmin
+            .from('accounts')
+            .insert({
+                name_ar: data.name_ar,
+                account_code: newCode,
+                parent_id: parent.id,
+                account_type_id: 'type_liability',
+                level: 3,
+                is_parent: false,
+                description: `Salary: ${data.salary || 0} - Phone: ${data.phone || ''}`
+            })
+            .select()
+            .single();
+
+        if (error) return { success: false, error: error.message };
+        return { success: true, data: newAccount };
+    } catch (error: any) {
+        return { success: false, error: error.message };
     }
-
-    // 3. Create Account
-    const { data: newAccount, error } = await supabaseAdmin
-        .from('accounts')
-        .insert({
-            name_ar: data.name_ar,
-            account_code: newCode,
-            parent_id: parent.id,
-            account_type_id: 'type_liability',
-            level: 3,
-            is_parent: false,
-            description: `Salary: ${data.salary || 0} - Phone: ${data.phone || ''}`
-        })
-        .select()
-        .single();
-
-    if (error) throw new Error(error.message);
-    return newAccount;
 }
 
 // --- دوال الرواتب ---
