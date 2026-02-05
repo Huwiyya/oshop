@@ -201,7 +201,7 @@ export default function CreateJournalEntryPage() {
                                                 type="text"
                                                 inputMode="decimal"
                                                 className="h-9"
-                                                value={line.debit}
+                                                value={String(line.debit || '')}
                                                 onChange={e => {
                                                     const val = e.target.value;
                                                     updateLine(line.id, 'debit', val);
@@ -218,7 +218,7 @@ export default function CreateJournalEntryPage() {
                                                 type="text"
                                                 inputMode="decimal"
                                                 className="h-9"
-                                                value={line.credit}
+                                                value={String(line.credit || '')}
                                                 onChange={e => {
                                                     const val = e.target.value;
                                                     updateLine(line.id, 'credit', val);
