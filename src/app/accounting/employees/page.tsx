@@ -27,7 +27,10 @@ export default function EmployeesPage() {
     };
 
     useEffect(() => {
-        fetchEmployees();
+        // Initialize accounts then fetch
+        fetch('/api/accounting/init-payroll', { method: 'POST' })
+            .then(() => fetchEmployees())
+            .catch(err => console.error('Error initializing payroll:', err));
     }, []);
 
     return (
@@ -106,15 +109,20 @@ function AddEmployeeDialog({ onSuccess }: { onSuccess: () => void }) {
         e.preventDefault();
         setLoading(true);
         try {
-            await createEmployee({
+            const res = await createEmployee({
                 name_ar: formData.name,
                 phone: formData.phone,
                 salary: Number(formData.salary)
             });
-            toast({ title: 'تمت إضافة الموظف بنجاح' });
-            setOpen(false);
-            setFormData({ name: '', phone: '', salary: '' });
-            onSuccess();
+
+            if (res.success) {
+                toast({ title: 'تمت إضافة الموظف بنجاح' });
+                setOpen(false);
+                setFormData({ name: '', phone: '', salary: '' });
+                onSuccess();
+            } else {
+                toast({ title: 'خطأ', description: res.error, variant: 'destructive' });
+            }
         } catch (error: any) {
             toast({ title: 'خطأ', description: error.message, variant: 'destructive' });
         } finally {
