@@ -120,7 +120,7 @@ export async function createSalesInvoice(data: CreateSalesInvoiceData) {
                     itemCost += layer.unit_cost * 1; // 1 card
                     totalCost += layer.unit_cost;
 
-                    layersUsed.push({ id: layer.id, cost: layer.unit_cost });
+                    layersUsed.push({ id: layer.id, cost: layer.unit_cost, qty: 1 });
                 }
             }
         } else {
@@ -161,22 +161,24 @@ export async function createSalesInvoice(data: CreateSalesInvoiceData) {
             }
         }
 
-        // B. Insert Invoice Line
-        // We calculate unit_cost as weighted average for the line record
-        const avgUnitCost = itemCost / item.quantity;
+        // B. Record Transactions (one per layer for traceability)
+        for (const layerUsed of layersUsed) {
+            await supabaseAdmin.from('inventory_transactions').insert({
+                item_id: item.itemId,
+                transaction_type: 'sale',
+                transaction_date: data.invoiceDate,
+                quantity: layerUsed.qty,
+                unit_cost: layerUsed.cost,
+                total_cost: layerUsed.qty * layerUsed.cost,
+                reference_type: 'sales_invoice',
+                reference_id: invoiceNumber,
+                layer_id: layerUsed.id, // CRITICAL: Save layer_id for restoration!
+                notes: `فاتورة بيع #${invoiceNumber}`
+            });
+        }
 
-        // Record outgoing transaction (important for item history)
-        await supabaseAdmin.from('inventory_transactions').insert({
-            item_id: item.itemId,
-            transaction_type: 'sale',
-            transaction_date: data.invoiceDate,
-            quantity: item.quantity,
-            unit_cost: avgUnitCost,
-            total_cost: itemCost,
-            reference_type: 'sales_invoice',
-            reference_id: invoiceNumber,
-            notes: `فاتورة بيع #${invoiceNumber}`
-        });
+        // Calculate avgUnitCost for invoice line
+        const avgUnitCost = itemCost / item.quantity;
 
         // Update Item Stock Summary
         const { data: currentItem } = await supabaseAdmin.from('inventory_items').select('quantity_on_hand').eq('id', item.itemId).single();
@@ -210,17 +212,21 @@ export async function createSalesInvoice(data: CreateSalesInvoiceData) {
     const { data: cogsAcc } = await supabaseAdmin.from('accounts').select('id').eq('account_code', '5100').single();
     const { data: inventoryAcc } = await supabaseAdmin.from('accounts').select('id').eq('account_code', '1130').single();
 
-    // Retrieve revenue account IDs for all items
+    // Retrieve revenue AND cogs account IDs for all items
     const itemIds = data.items.map(i => i.itemId);
     const { data: dbItems } = await supabaseAdmin
         .from('inventory_items')
-        .select('id, revenue_account_id')
+        .select('id, revenue_account_id, cogs_account_id')
         .in('id', itemIds);
 
     const itemRevenueMap = new Map();
+    const itemCogsMap = new Map();
     dbItems?.forEach(item => {
         if (item.revenue_account_id) {
             itemRevenueMap.set(item.id, item.revenue_account_id);
+        }
+        if (item.cogs_account_id) {
+            itemCogsMap.set(item.id, item.cogs_account_id);
         }
     });
 
@@ -265,17 +271,67 @@ export async function createSalesInvoice(data: CreateSalesInvoiceData) {
         });
     }
 
-    // B. COGS Entry (Perpetual Inventory)
-    // Dr. COGS
+    // B. COGS Entry (Perpetual Inventory) - Per Item Account
+    // Dr. COGS A (for item 1)
+    // Dr. COGS B (for item 2)
     //   Cr. Inventory
     if (cogsAcc && inventoryAcc && totalCost > 0) {
+        // Group COGS by Account (similar to revenue)
+        const cogsGrouping = new Map<string, { cost: number, items: string[] }>();
+
+        // We need to track cost per item from our earlier FIFO calculation
+        // The itemCost variable was calculated in the loop above (lines 98-162)
+        // But we need it per item. Let's recalculate or store it.
+
+        // Simple approach: Use the data.items array which should have been enhanced with cost
+        // Actually, we need to track cost per item. Let me check if we have it in transactions.
+
+        // Better approach: Read from the transactions we just created
+        const { data: recentTransactions } = await supabaseAdmin
+            .from('inventory_transactions')
+            .select('item_id, total_cost')
+            .eq('reference_id', invoiceNumber);
+
+        // Group by item
+        const itemCostMap = new Map<string, number>();
+        recentTransactions?.forEach(trx => {
+            const current = itemCostMap.get(trx.item_id) || 0;
+            itemCostMap.set(trx.item_id, current + (trx.total_cost || 0));
+        });
+
+        // Now group by COGS account
+        for (const item of data.items) {
+            const customCogsId = itemCogsMap.get(item.itemId);
+            const targetCogsId = customCogsId || cogsAcc.id;
+            const itemCost = itemCostMap.get(item.itemId) || 0;
+
+            if (targetCogsId && itemCost > 0) {
+                const current = cogsGrouping.get(targetCogsId) || { cost: 0, items: [] };
+                cogsGrouping.set(targetCogsId, {
+                    cost: current.cost + itemCost,
+                    items: [...current.items, item.description]
+                });
+            }
+        }
+
+        // Create debit lines for each COGS account
+        const cogsDebitLines: JournalEntryLine[] = [];
+        for (const [accId, data] of Array.from(cogsGrouping.entries())) {
+            cogsDebitLines.push({
+                accountId: accId,
+                description: `تكلفة مبيعات - فاتورة #${invoiceNumber}`,
+                debit: data.cost,
+                credit: 0
+            });
+        }
+
         await createJournalEntry({
             date: data.invoiceDate,
             description: `إثبات تكلفة البضاعة المباعة - فاتورة #${invoiceNumber}`,
             referenceType: 'sales_cogs',
             referenceId: invoiceNumber,
             lines: [
-                { accountId: cogsAcc.id, description: `تكلفة مبيعات - فاتورة #${invoiceNumber}`, debit: totalCost, credit: 0 },
+                ...cogsDebitLines,
                 { accountId: inventoryAcc.id, description: `صرف مخزون - فاتورة #${invoiceNumber}`, debit: 0, credit: totalCost }
             ]
         });
@@ -308,28 +364,57 @@ export async function createSalesInvoice(data: CreateSalesInvoiceData) {
 }
 
 export async function deleteSalesInvoice(id: string) {
-    // 1. Get Invoice Details
+    // 1. Get Invoice Details Including Transactions
     const { data: invoice } = await supabaseAdmin.from('sales_invoices').select('*, lines:sales_invoice_lines(*)').eq('id', id).single();
     if (!invoice) return { success: false, error: 'الفاتورة غير موجودة' };
 
     try {
-        // 2. Reverse Inventory Impact (Simple Restoration)
+        // 2. Get Related Inventory Transactions (to know which layers were used)
+        const { data: transactions } = await supabaseAdmin
+            .from('inventory_transactions')
+            .select('*, layer:inventory_layers(id, card_number, purchase_date, unit_cost)')
+            .eq('reference_id', invoice.invoice_number)
+            .eq('transaction_type', 'sale');
+
+        // 3. Reverse Inventory Impact
         if (invoice.lines && invoice.lines.length > 0) {
             for (const line of invoice.lines) {
-                const { data: item } = await supabaseAdmin.from('inventory_items').select('quantity_on_hand').eq('id', line.item_id).single();
-                if (item) {
-                    await supabaseAdmin.from('inventory_items')
-                        .update({ quantity_on_hand: item.quantity_on_hand + line.quantity })
-                        .eq('id', line.item_id);
+                // Get item details to check if it's a card item
+                const { data: item } = await supabaseAdmin
+                    .from('inventory_items')
+                    .select('id, is_shein_card, quantity_on_hand')
+                    .eq('id', line.item_id)
+                    .single();
+
+                if (!item) continue;
+
+                // A. Restore quantity_on_hand
+                await supabaseAdmin.from('inventory_items')
+                    .update({ quantity_on_hand: item.quantity_on_hand + line.quantity })
+                    .eq('id', line.item_id);
+
+                // B. Restore layers (CRITICAL for cards!)
+                if (item.is_shein_card && transactions) {
+                    // Find transactions for this item
+                    const itemTransactions = transactions.filter(t => t.item_id === line.item_id);
+
+                    for (const trx of itemTransactions) {
+                        if (trx.layer && trx.layer.id) {
+                            // Restore the layer by setting remaining_quantity back to 1
+                            await supabaseAdmin
+                                .from('inventory_layers')
+                                .update({ remaining_quantity: 1 })
+                                .eq('id', trx.layer.id);
+                        }
+                    }
                 }
             }
         }
 
-        // 3. Delete Inventory Transactions
+        // 4. Delete Inventory Transactions
         await supabaseAdmin.from('inventory_transactions').delete().eq('reference_id', invoice.invoice_number);
 
-        // 4. Delete Journal Entries (entries linked to this invoice)
-        // Note: We query by reference_id (Invoice Number)
+        // 5. Delete Journal Entries (entries linked to this invoice)
         const { data: entries } = await supabaseAdmin.from('journal_entries').select('id').eq('reference_id', invoice.invoice_number);
         if (entries && entries.length > 0) {
             const entryIds = entries.map(e => e.id);
@@ -337,7 +422,7 @@ export async function deleteSalesInvoice(id: string) {
             await supabaseAdmin.from('journal_entries').delete().in('id', entryIds);
         }
 
-        // 5. Delete Invoice Lines & Invoice
+        // 6. Delete Invoice Lines & Invoice
         await supabaseAdmin.from('sales_invoice_lines').delete().eq('invoice_id', id);
         const { error } = await supabaseAdmin.from('sales_invoices').delete().eq('id', id);
 

@@ -82,6 +82,7 @@ function SalesInvoicesContent() {
                                 <TableHead>رقم الفاتورة</TableHead>
                                 <TableHead>تاريخ الفاتورة</TableHead>
                                 <TableHead>العميل</TableHead>
+                                <TableHead>البيان</TableHead>
                                 <TableHead>العملة</TableHead>
                                 <TableHead>الإجمالي (بيع)</TableHead>
                                 <TableHead className="text-slate-500">التكلفة</TableHead>
@@ -93,10 +94,10 @@ function SalesInvoicesContent() {
                         </TableHeader>
                         <TableBody>
                             {isLoading ? (
-                                <TableRow><TableCell colSpan={10} className="text-center py-10">جاري التحميل...</TableCell></TableRow>
+                                <TableRow><TableCell colSpan={11} className="text-center py-10">جاري التحميل...</TableCell></TableRow>
                             ) : invoices.length === 0 ? (
                                 <TableRow>
-                                    <TableCell colSpan={10} className="text-center py-10 text-slate-500">
+                                    <TableCell colSpan={11} className="text-center py-10 text-slate-500">
                                         لا توجد فواتير بيع
                                     </TableCell>
                                 </TableRow>
@@ -106,6 +107,9 @@ function SalesInvoicesContent() {
                                         <TableCell className="font-mono font-medium">{inv.invoice_number}</TableCell>
                                         <TableCell className="text-xs text-slate-500">{inv.invoice_date}</TableCell>
                                         <TableCell>{inv.customer?.name_ar}</TableCell>
+                                        <TableCell className="text-xs text-slate-500 max-w-[200px] truncate" title={inv.notes}>
+                                            {inv.notes || '-'}
+                                        </TableCell>
                                         <TableCell className="text-xs font-mono">{inv.currency}</TableCell>
                                         <TableCell className="font-bold">{formatCurrency(inv.total_amount)}</TableCell>
                                         <TableCell className="text-slate-500 font-mono text-xs">{formatCurrency(inv.total_cost)}</TableCell>

@@ -3,32 +3,21 @@ import { createClient } from '@supabase/supabase-js';
 import * as dotenv from 'dotenv';
 dotenv.config({ path: '.env.local' });
 
+const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!);
+
 async function checkSchema() {
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-    const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
-    const supabase = createClient(supabaseUrl, supabaseServiceKey);
+    // We can't query information_schema easily via client sometimes due to permissions, 
+    // but we can try selecting * limit 0 and checking keys?
+    // Or just try to select 'reference_id' and see if it errors.
 
-    console.log('🔍 Checking Schema for orders_v4...');
+    console.log("Checking if reference_id exists...");
+    const { data, error } = await supabase.from('inventory_transactions').select('reference_id').limit(1);
 
-    // Fetch one row and check keys
-    const { data, error } = await supabase
-        .from('orders_v4')
-        .select('*')
-        .limit(1)
-        .single();
-
-    if (data) {
-        const keys = Object.keys(data);
-        console.log('📋 Available Columns:');
-        console.log(keys.join(', '));
-
-        if (keys.includes('walletPaymentAmount')) {
-            console.log('\n✅ "walletPaymentAmount" column EXISTS.');
-        } else {
-            console.log('\n❌ "walletPaymentAmount" column MISSING!');
-        }
+    if (error) {
+        console.log("Error selecting reference_id:", error.message);
+        // likely "Column does not exist"
     } else {
-        console.log('❌ Could not fetch data to check schema.', error);
+        console.log("Column reference_id EXISTS.");
     }
 }
 

@@ -206,6 +206,7 @@ function AddItemDialog({ onSuccess }: { onSuccess: () => void }) {
     const [isLoading, setIsLoading] = useState(false);
     const { toast } = useToast();
     const [accounts, setAccounts] = useState<any[]>([]);
+    const [expenseAccounts, setExpenseAccounts] = useState<any[]>([]);
 
     useEffect(() => {
         if (open) {
@@ -213,6 +214,10 @@ function AddItemDialog({ onSuccess }: { onSuccess: () => void }) {
                 // Filter Revenue accounts (Class 4)
                 const revenues = data?.filter((a: any) => a.account_code.toString().startsWith('4') && !a.is_parent) || [];
                 setAccounts(revenues);
+
+                // Filter Expense accounts (Class 5) for COGS
+                const expenses = data?.filter((a: any) => a.account_code.toString().startsWith('5') && !a.is_parent) || [];
+                setExpenseAccounts(expenses);
             });
         }
     }, [open]);
@@ -223,7 +228,8 @@ function AddItemDialog({ onSuccess }: { onSuccess: () => void }) {
         name_en: '',
         category: 'general', // general or cards
         description: '',
-        revenue_account_id: ''
+        revenue_account_id: '',
+        cogs_account_id: ''
     });
 
     const handleSubmit = async (e: React.FormEvent) => {
@@ -233,7 +239,7 @@ function AddItemDialog({ onSuccess }: { onSuccess: () => void }) {
             await createInventoryItem(formData);
             toast({ title: 'تمت الإضافة بنجاح' });
             setOpen(false);
-            setFormData({ item_code: '', name_ar: '', name_en: '', category: 'general', description: '', revenue_account_id: '' });
+            setFormData({ item_code: '', name_ar: '', name_en: '', category: 'general', description: '', revenue_account_id: '', cogs_account_id: '' });
             onSuccess();
         } catch (error: any) {
             toast({ title: 'خطأ', description: error.message, variant: 'destructive' });
@@ -317,6 +323,30 @@ function AddItemDialog({ onSuccess }: { onSuccess: () => void }) {
                         <p className="text-xs text-slate-500">
                             عند بيع هذا الصنف، سيتم تسجيل الإيراد في هذا الحساب بدلاً من حساب المبيعات العام.
                             مفيد لفصل إيرادات (شي ان) عن المنتجات الأخرى.
+                        </p>
+                    </div>
+
+                    <div className="space-y-2">
+                        <Label>حساب تكلفة البضاعة المباعة (اختياري)</Label>
+                        <Select
+                            value={formData.cogs_account_id}
+                            onValueChange={(v) => setFormData({ ...formData, cogs_account_id: v })}
+                        >
+                            <SelectTrigger>
+                                <SelectValue placeholder="الافتراضي (5100 - تكلفة بضاعة مباعة)" />
+                            </SelectTrigger>
+                            <SelectContent className="max-h-[200px]">
+                                {expenseAccounts.map((acc) => (
+                                    <SelectItem key={acc.id} value={acc.id}>
+                                        <span className="font-mono text-slate-500 ml-2">{acc.account_code}</span>
+                                        {acc.name_ar}
+                                    </SelectItem>
+                                ))}
+                            </SelectContent>
+                        </Select>
+                        <p className="text-xs text-slate-500">
+                            عند بيع هذا الصنف، سيتم تسجيل التكلفة في هذا الحساب بدلاً من حساب التكلفة العام.
+                            مفيد لتتبع تكاليف أصناف معينة (مثل بطاقات شي ان).
                         </p>
                     </div>
 

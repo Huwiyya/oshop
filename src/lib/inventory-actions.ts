@@ -35,6 +35,7 @@ export async function createInventoryItem(data: {
     category?: string; // e.g., 'shein_cards'
     description?: string;
     revenue_account_id?: string;
+    cogs_account_id?: string;
 }) {
     // Get Inventory Account (Assets -> Inventory)
     const { data: inventoryAcc } = await supabaseAdmin
@@ -55,8 +56,9 @@ export async function createInventoryItem(data: {
         .insert({
             ...data,
             inventory_account_id: inventoryAcc?.id, // Link to GL
-            cogs_account_id: cogsAcc?.id,
-            revenue_account_id: data.revenue_account_id, // Link to Revenue Account
+            // Convert empty strings to null for foreign key constraints
+            cogs_account_id: data.cogs_account_id && data.cogs_account_id !== '' ? data.cogs_account_id : cogsAcc?.id,
+            revenue_account_id: data.revenue_account_id && data.revenue_account_id !== '' ? data.revenue_account_id : null,
             is_shein_card: data.category === 'cards',
             unit: data.category === 'cards' ? 'card' : 'piece'
         })
@@ -90,6 +92,8 @@ export async function addInventoryStock(data: {
     unitCost: number;
     purchaseDate: string;
     cardNumber?: string; // لبطاقات شي ان
+    referenceId?: string; // e.g. Invoice Number PI-2026-1001
+    referenceType?: string; // e.g. 'purchase_invoice'
     notes?: string;
 }) {
     // 1. Get Item info to know the GL account
@@ -121,7 +125,9 @@ export async function addInventoryStock(data: {
         unit_cost: data.unitCost,
         total_cost: data.quantity * data.unitCost, // Total value added
         layer_id: layer.id,
-        notes: data.notes || 'إضافة رصيد مخزني'
+        notes: data.notes || 'إضافة رصيد مخزني',
+        reference_id: data.referenceId,
+        reference_type: data.referenceType
     });
 
     // 4. Update Item Total Quantity & Weighted Average Cost

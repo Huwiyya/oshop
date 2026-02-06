@@ -120,7 +120,9 @@ export async function createPurchaseInvoice(data: CreateInvoiceData) {
                     unitCost: item.unitPrice,
                     purchaseDate: data.invoiceDate,
                     cardNumber: cardNum,
-                    notes: `فاتورة شراء #${invoiceNumber}`
+                    notes: `فاتورة شراء #${invoiceNumber}`,
+                    referenceId: invoiceNumber,
+                    referenceType: 'purchase_invoice'
                 });
             }
             // If quantity > cardNumbers.length, the rest are added without card numbers?
@@ -132,7 +134,9 @@ export async function createPurchaseInvoice(data: CreateInvoiceData) {
                 quantity: item.quantity,
                 unitCost: item.unitPrice,
                 purchaseDate: data.invoiceDate,
-                notes: `فاتورة شراء #${invoiceNumber}`
+                notes: `فاتورة شراء #${invoiceNumber}`,
+                referenceId: invoiceNumber,
+                referenceType: 'purchase_invoice'
             });
         }
     }
@@ -221,15 +225,33 @@ export async function deletePurchaseInvoice(id: string) {
     await supabaseAdmin.from('journal_entries').delete().eq('reference_id', invoice.invoice_number);
 
     // 3. Delete Inventory Transactions (and update stock)
-    // Find transactions linked by note (Hack due to missing FK)
+    // Find transactions linked by reference_id (Robust method)
     const { data: transactions } = await supabaseAdmin
         .from('inventory_transactions')
         .select('id')
-        .ilike('notes', `%${invoice.invoice_number}%`);
+        .eq('reference_id', invoice.invoice_number)
+        .eq('reference_type', 'purchase_invoice');
 
-    if (transactions && transactions.length > 0) {
-        for (const trx of transactions) {
-            await deleteInventoryTransaction(trx.id);
+    // Fallback: search by note if no reference_id (for old data not backfilled yet)
+    // But since we ran backfill, we should rely on reference first.
+    // If we want to be super safe, we can combine OR logic or check if empty.
+
+    let txToDelete = transactions || [];
+
+    if (txToDelete.length === 0) {
+        const { data: oldTx } = await supabaseAdmin
+            .from('inventory_transactions')
+            .select('id')
+            .ilike('notes', `%${invoice.invoice_number}%`);
+        if (oldTx) txToDelete = [...txToDelete, ...oldTx];
+    }
+
+
+    if (txToDelete && txToDelete.length > 0) {
+        // Deduplicate IDs
+        const uniqueIds = Array.from(new Set(txToDelete.map(t => t.id)));
+        for (const id of uniqueIds) {
+            await deleteInventoryTransaction(id);
         }
     }
 
