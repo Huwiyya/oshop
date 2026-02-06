@@ -5,19 +5,23 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Plus, FileText } from 'lucide-react';
+import { Plus, FileText, Trash2, Pencil } from 'lucide-react';
 import { getJournalEntries } from '@/lib/journal-actions';
+import { deleteManualJournalEntry } from '@/lib/accounting-actions';
 import { formatCurrency } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
 import { ListFilter } from '@/components/accounting/list-filter';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
+import { useToast } from '@/components/ui/use-toast';
 
 function JournalEntriesContent() {
     const router = useRouter();
     const searchParams = useSearchParams();
     const [entries, setEntries] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
+    const { toast } = useToast();
 
-    useEffect(() => {
+    const loadData = () => {
         setLoading(true);
         getJournalEntries({
             query: searchParams.get('q') || undefined,
@@ -27,6 +31,10 @@ function JournalEntriesContent() {
             setEntries(data || []);
             setLoading(false);
         });
+    };
+
+    useEffect(() => {
+        loadData();
     }, [searchParams]);
 
     return (
@@ -55,14 +63,15 @@ function JournalEntriesContent() {
                                 <TableHead>النوع</TableHead>
                                 <TableHead>الإجمالي</TableHead>
                                 <TableHead>الحالة</TableHead>
+                                <TableHead className="text-center">إجراءات</TableHead>
                             </TableRow>
                         </TableHeader>
                         <TableBody>
                             {loading ? (
-                                <TableRow><TableCell colSpan={6} className="text-center py-10">جاري التحميل...</TableCell></TableRow>
+                                <TableRow><TableCell colSpan={7} className="text-center py-10">جاري التحميل...</TableCell></TableRow>
                             ) : entries.length === 0 ? (
                                 <TableRow>
-                                    <TableCell colSpan={6} className="text-center py-10 text-slate-500">لا توجد قيود مسجلة</TableCell>
+                                    <TableCell colSpan={7} className="text-center py-10 text-slate-500">لا توجد قيود مسجلة</TableCell>
                                 </TableRow>
                             ) : (
                                 entries.map((entry) => (
@@ -79,12 +88,34 @@ function JournalEntriesContent() {
                                             </Badge>
                                         </TableCell>
                                         <TableCell className="font-bold font-mono text-emerald-700">
-                                            {formatCurrency(entry.total_debit)}
+                                            {formatCurrency(entry.total_debit || 0)}
                                         </TableCell>
                                         <TableCell>
-                                            <Badge className={entry.status === 'posted' ? 'bg-emerald-500' : 'bg-slate-500'}>
-                                                {entry.status === 'posted' ? 'مرحل' : 'مسودة'}
+                                            <Badge variant={entry.is_posted ? 'default' : 'secondary'} className="text-xs">
+                                                {entry.is_posted ? 'مرحّل' : 'مسودة'}
                                             </Badge>
+                                        </TableCell>
+                                        <TableCell className="text-center">
+                                            <div className="flex items-center justify-center gap-1">
+                                                {(!entry.reference_type || entry.reference_type === 'manual') ? (
+                                                    <>
+                                                        <Button
+                                                            variant="ghost"
+                                                            size="sm"
+                                                            className="h-8 w-8 p-0"
+                                                            onClick={() => router.push(`/accounting/journal-entries/${entry.id}/edit`)}
+                                                        >
+                                                            <Pencil className="w-4 h-4 text-blue-600" />
+                                                        </Button>
+                                                        <DeleteJournalEntryButton
+                                                            entry={entry}
+                                                            onSuccess={loadData}
+                                                        />
+                                                    </>
+                                                ) : (
+                                                    <span className="text-xs text-muted-foreground">مرتبط</span>
+                                                )}
+                                            </div>
                                         </TableCell>
                                     </TableRow>
                                 ))
@@ -94,6 +125,62 @@ function JournalEntriesContent() {
                 </CardContent>
             </Card>
         </div>
+    );
+}
+
+function DeleteJournalEntryButton({ entry, onSuccess }: { entry: any; onSuccess: () => void }) {
+    const [loading, setLoading] = useState(false);
+    const { toast } = useToast();
+
+    const handleDelete = async () => {
+        setLoading(true);
+        try {
+            const res = await deleteManualJournalEntry(entry.id);
+            if (res.success) {
+                toast({ title: 'تم حذف القيد اليومي بنجاح' });
+                onSuccess();
+            } else {
+                toast({ title: 'خطأ', description: res.error, variant: 'destructive' });
+            }
+        } catch (error: any) {
+            toast({ title: 'خطأ', description: error.message, variant: 'destructive' });
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    return (
+        <AlertDialog>
+            <AlertDialogTrigger asChild>
+                <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
+                    <Trash2 className="w-4 h-4 text-red-600" />
+                </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+                <AlertDialogHeader>
+                    <AlertDialogTitle>حذف القيد اليومي؟</AlertDialogTitle>
+                    <AlertDialogDescription>
+                        هل أنت متأكد من حذف القيد <strong>#{entry.entry_number}</strong>؟
+                        <br /><br />
+                        <strong className="text-slate-900">{entry.description}</strong>
+                        <br />
+                        المبلغ: <strong>{formatCurrency(entry.total_debit || 0)}</strong>
+                        <br /><br />
+                        <strong className="text-red-600">تحذير:</strong> سيؤثر هذا على أرصدة الحسابات المرتبطة ولا يمكن التراجع.
+                    </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                    <AlertDialogCancel>إلغاء</AlertDialogCancel>
+                    <AlertDialogAction
+                        onClick={handleDelete}
+                        disabled={loading}
+                        className="bg-red-600 hover:bg-red-700"
+                    >
+                        {loading ? 'جاري الحذف...' : 'حذف'}
+                    </AlertDialogAction>
+                </AlertDialogFooter>
+            </AlertDialogContent>
+        </AlertDialog>
     );
 }
 
