@@ -1,54 +1,82 @@
-import React from 'react';
-import { getCashAccounts, getBankAccounts } from '@/lib/accounting-actions';
+'use client';
+
+import React, { useState, useEffect } from 'react';
+import { getCashAccounts, getBankAccounts, updateBankAccount, updateCashAccount, deleteBankAccount } from '@/lib/accounting-actions';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { Wallet, Landmark, Plus } from 'lucide-react';
+import { Wallet, Landmark, Pencil, Trash2 } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from '@/components/ui/dialog';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { useToast } from '@/components/ui/use-toast';
 import Link from 'next/link';
 
-export default async function CashAndBankPage() {
-    const cashAccountsData = await getCashAccounts();
-    const bankAccountsData = await getBankAccounts();
+type Account = {
+    id: string;
+    name: string;
+    currency: string;
+    balance: number;
+    accountNumber?: string | null;
+    type: 'cash' | 'bank';
+    rawData: any;
+};
 
-    // Map database fields to display fields
-    const cashAccounts = cashAccountsData.map((acc: any) => ({
-        id: acc.id,
-        name: acc.name_ar || acc.name_en || 'حساب نقدي',
-        currency: acc.currency || 'LYD',
-        balance: acc.current_balance || 0,
-        type: 'cash' as const
-    }));
+export default function CashAndBankPage() {
+    const [cashAccounts, setCashAccounts] = useState<Account[]>([]);
+    const [bankAccounts, setBankAccounts] = useState<Account[]>([]);
+    const [loading, setLoading] = useState(true);
+    const { toast } = useToast();
 
-    const bankAccounts = bankAccountsData.map((acc: any) => {
-        const descMatch = acc.description?.match(/Account:\s*(\S+)/);
-        const accountNumber = descMatch ? descMatch[1] : null;
+    const loadData = async () => {
+        setLoading(true);
+        try {
+            const cashData = await getCashAccounts();
+            const bankData = await getBankAccounts();
 
-        return {
-            id: acc.id,
-            name: acc.name_ar || acc.name_en || 'حساب بنكي',
-            currency: acc.currency || 'LYD',
-            balance: acc.current_balance || 0,
-            accountNumber: accountNumber,
-            type: 'bank' as const
-        };
-    });
+            setCashAccounts(cashData.map((acc: any) => ({
+                id: acc.id,
+                name: acc.name_ar || acc.name_en || 'حساب نقدي',
+                currency: acc.currency || 'LYD',
+                balance: acc.current_balance || 0,
+                type: 'cash' as const,
+                rawData: acc
+            })));
 
-    const totalCashLYD = cashAccounts
-        .filter(a => a.currency === 'LYD')
-        .reduce((sum, a) => sum + a.balance, 0);
+            setBankAccounts(bankData.map((acc: any) => {
+                const descMatch = acc.description?.match(/Account:\s*(\S+)/);
+                const accountNumber = descMatch ? descMatch[1] : null;
 
-    const totalCashUSD = cashAccounts
-        .filter(a => a.currency === 'USD')
-        .reduce((sum, a) => sum + a.balance, 0);
+                return {
+                    id: acc.id,
+                    name: acc.name_ar || acc.name_en || 'حساب بنكي',
+                    currency: acc.currency || 'LYD',
+                    balance: acc.current_balance || 0,
+                    accountNumber,
+                    type: 'bank' as const,
+                    rawData: acc
+                };
+            }));
+        } catch (error) {
+            toast({ title: 'خطأ', description: 'فشل تحميل البيانات', variant: 'destructive' });
+        } finally {
+            setLoading(false);
+        }
+    };
 
-    const totalBankLYD = bankAccounts
-        .filter(a => a.currency === 'LYD')
-        .reduce((sum, a) => sum + a.balance, 0);
+    useEffect(() => {
+        loadData();
+    }, []);
 
-    const totalBankUSD = bankAccounts
-        .filter(a => a.currency === 'USD')
-        .reduce((sum, a) => sum + a.balance, 0);
-
+    const totalCashLYD = cashAccounts.filter(a => a.currency === 'LYD').reduce((sum, a) => sum + a.balance, 0);
+    const totalCashUSD = cashAccounts.filter(a => a.currency === 'USD').reduce((sum, a) => sum + a.balance, 0);
+    const totalBankLYD = bankAccounts.filter(a => a.currency === 'LYD').reduce((sum, a) => sum + a.balance, 0);
+    const totalBankUSD = bankAccounts.filter(a => a.currency === 'USD').reduce((sum, a) => sum + a.balance, 0);
     const grandTotalLYD = totalCashLYD + totalBankLYD;
     const grandTotalUSD = totalCashUSD + totalBankUSD;
+
+    if (loading) return <div className="text-center py-20">جاري التحميل...</div>;
 
     return (
         <div className="space-y-6">
@@ -128,17 +156,16 @@ export default async function CashAndBankPage() {
                         <Wallet className="w-6 h-6 text-emerald-600" />
                         الخزائن النقدية
                     </h2>
-                    <Link href="/admin/accounting/cash-accounts">
-                        <button className="text-sm text-primary hover:underline">
-                            عرض الكل ←
-                        </button>
-                    </Link>
                 </div>
 
                 <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
                     {cashAccounts.map((account) => (
-                        <Link key={account.id} href={`/accounting/cash-bank/${account.id}`}>
-                            <Card className="hover:border-emerald-500/50 transition-colors cursor-pointer group">
+                        <Card key={account.id} className="hover:border-emerald-500/50 transition-colors group relative">
+                            <div className="absolute top-3 left-3 flex gap-1 z-10">
+                                <EditCashAccountDialog account={account} onSuccess={loadData} />
+                                <DeleteAccountDialog account={account} onSuccess={loadData} />
+                            </div>
+                            <Link href={`/accounting/cash-bank/${account.id}`}>
                                 <CardHeader className="pb-2">
                                     <CardTitle className="flex justify-between items-start text-lg">
                                         <span className="group-hover:text-emerald-600 transition-colors">{account.name}</span>
@@ -152,8 +179,8 @@ export default async function CashAndBankPage() {
                                         <span className="text-sm font-normal text-muted-foreground ml-1">{account.currency}</span>
                                     </div>
                                 </CardContent>
-                            </Card>
-                        </Link>
+                            </Link>
+                        </Card>
                     ))}
 
                     {cashAccounts.length === 0 && (
@@ -171,17 +198,16 @@ export default async function CashAndBankPage() {
                         <Landmark className="w-6 h-6 text-blue-600" />
                         الحسابات البنكية
                     </h2>
-                    <Link href="/admin/accounting/bank-accounts">
-                        <button className="text-sm text-primary hover:underline">
-                            عرض الكل ←
-                        </button>
-                    </Link>
                 </div>
 
                 <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
                     {bankAccounts.map((account) => (
-                        <Link key={account.id} href={`/accounting/cash-bank/${account.id}`}>
-                            <Card className="hover:border-blue-500/50 transition-colors cursor-pointer group">
+                        <Card key={account.id} className="hover:border-blue-500/50 transition-colors group relative">
+                            <div className="absolute top-3 left-3 flex gap-1 z-10">
+                                <EditBankAccountDialog account={account} onSuccess={loadData} />
+                                <DeleteAccountDialog account={account} onSuccess={loadData} />
+                            </div>
+                            <Link href={`/accounting/cash-bank/${account.id}`}>
                                 <CardHeader className="pb-2">
                                     <CardTitle className="flex justify-between items-start text-lg">
                                         <span className="group-hover:text-blue-600 transition-colors">{account.name}</span>
@@ -197,8 +223,8 @@ export default async function CashAndBankPage() {
                                         <span className="text-sm font-normal text-muted-foreground ml-1">{account.currency}</span>
                                     </div>
                                 </CardContent>
-                            </Card>
-                        </Link>
+                            </Link>
+                        </Card>
                     ))}
 
                     {bankAccounts.length === 0 && (
@@ -209,5 +235,205 @@ export default async function CashAndBankPage() {
                 </div>
             </div>
         </div>
+    );
+}
+
+function EditBankAccountDialog({ account, onSuccess }: { account: Account; onSuccess: () => void }) {
+    const [open, setOpen] = useState(false);
+    const [loading, setLoading] = useState(false);
+    const { toast } = useToast();
+
+    const parseBank = (desc: string) => desc?.match(/Bank:\s*([^-]+)/)?.[1]?.trim() || '';
+    const parseAccountNumber = (desc: string) => desc?.match(/Account:\s*(\S+)/)?.[1] || '';
+
+    const [formData, setFormData] = useState({
+        name: account.name,
+        currency: account.currency as 'LYD' | 'USD',
+        bankName: parseBank(account.rawData.description),
+        accountNumber: parseAccountNumber(account.rawData.description)
+    });
+
+    const handleSubmit = async (e: React.FormEvent) => {
+        e.preventDefault();
+        setLoading(true);
+        try {
+            const res = await updateBankAccount(account.id, formData);
+            if (res.success) {
+                toast({ title: 'تم تحديث الحساب البنكي بنجاح' });
+                setOpen(false);
+                onSuccess();
+            } else {
+                toast({ title: 'خطأ', description: res.error, variant: 'destructive' });
+            }
+        } catch (error: any) {
+            toast({ title: 'خطأ', description: error.message, variant: 'destructive' });
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    return (
+        <Dialog open={open} onOpenChange={setOpen}>
+            <DialogTrigger asChild onClick={(e) => e.stopPropagation()}>
+                <Button variant="ghost" size="sm" className="h-8 w-8 p-0 bg-white/80 hover:bg-white">
+                    <Pencil className="w-4 h-4 text-blue-600" />
+                </Button>
+            </DialogTrigger>
+            <DialogContent onClick={(e) => e.stopPropagation()}>
+                <DialogHeader>
+                    <DialogTitle>تعديل حساب بنكي</DialogTitle>
+                </DialogHeader>
+                <form onSubmit={handleSubmit} className="space-y-4 py-4">
+                    <div className="space-y-2">
+                        <Label>اسم الحساب</Label>
+                        <Input required value={formData.name} onChange={e => setFormData({ ...formData, name: e.target.value })} />
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                            <Label>اسم البنك</Label>
+                            <Input value={formData.bankName} onChange={e => setFormData({ ...formData, bankName: e.target.value })} />
+                        </div>
+                        <div className="space-y-2">
+                            <Label>رقم الحساب</Label>
+                            <Input value={formData.accountNumber} onChange={e => setFormData({ ...formData, accountNumber: e.target.value })} />
+                        </div>
+                    </div>
+                    <div className="space-y-2">
+                        <Label>العملة</Label>
+                        <Select value={formData.currency} onValueChange={(v: any) => setFormData({ ...formData, currency: v })}>
+                            <SelectTrigger><SelectValue /></SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value="LYD">دينار ليبي</SelectItem>
+                                <SelectItem value="USD">دولار</SelectItem>
+                            </SelectContent>
+                        </Select>
+                    </div>
+                    <DialogFooter>
+                        <Button type="submit" disabled={loading}>حفظ التعديلات</Button>
+                    </DialogFooter>
+                </form>
+            </DialogContent>
+        </Dialog>
+    );
+}
+
+function EditCashAccountDialog({ account, onSuccess }: { account: Account; onSuccess: () => void }) {
+    const [open, setOpen] = useState(false);
+    const [loading, setLoading] = useState(false);
+    const { toast } = useToast();
+
+    const [formData, setFormData] = useState({
+        name: account.name,
+        currency: account.currency as 'LYD' | 'USD',
+        description: account.rawData.description || ''
+    });
+
+    const handleSubmit = async (e: React.FormEvent) => {
+        e.preventDefault();
+        setLoading(true);
+        try {
+            const res = await updateCashAccount(account.id, formData);
+            if (res.success) {
+                toast({ title: 'تم تحديث الخزينة النقدية بنجاح' });
+                setOpen(false);
+                onSuccess();
+            } else {
+                toast({ title: 'خطأ', description: res.error, variant: 'destructive' });
+            }
+        } catch (error: any) {
+            toast({ title: 'خطأ', description: error.message, variant: 'destructive' });
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    return (
+        <Dialog open={open} onOpenChange={setOpen}>
+            <DialogTrigger asChild onClick={(e) => e.stopPropagation()}>
+                <Button variant="ghost" size="sm" className="h-8 w-8 p-0 bg-white/80 hover:bg-white">
+                    <Pencil className="w-4 h-4 text-emerald-600" />
+                </Button>
+            </DialogTrigger>
+            <DialogContent onClick={(e) => e.stopPropagation()}>
+                <DialogHeader>
+                    <DialogTitle>تعديل خزينة نقدية</DialogTitle>
+                </DialogHeader>
+                <form onSubmit={handleSubmit} className="space-y-4 py-4">
+                    <div className="space-y-2">
+                        <Label>اسم الخزينة</Label>
+                        <Input required value={formData.name} onChange={e => setFormData({ ...formData, name: e.target.value })} />
+                    </div>
+                    <div className="space-y-2">
+                        <Label>العملة</Label>
+                        <Select value={formData.currency} onValueChange={(v: any) => setFormData({ ...formData, currency: v })}>
+                            <SelectTrigger><SelectValue /></SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value="LYD">دينار ليبي</SelectItem>
+                                <SelectItem value="USD">دولار</SelectItem>
+                            </SelectContent>
+                        </Select>
+                    </div>
+                    <div className="space-y-2">
+                        <Label>ملاحظات</Label>
+                        <Input value={formData.description} onChange={e => setFormData({ ...formData, description: e.target.value })} />
+                    </div>
+                    <DialogFooter>
+                        <Button type="submit" disabled={loading}>حفظ التعديلات</Button>
+                    </DialogFooter>
+                </form>
+            </DialogContent>
+        </Dialog>
+    );
+}
+
+function DeleteAccountDialog({ account, onSuccess }: { account: Account; onSuccess: () => void }) {
+    const [loading, setLoading] = useState(false);
+    const { toast } = useToast();
+
+    const handleDelete = async () => {
+        setLoading(true);
+        try {
+            const res = await deleteBankAccount(account.id);
+            if (res.success) {
+                toast({ title: `تم حذف ${account.type === 'bank' ? 'الحساب البنكي' : 'الخزينة النقدية'} بنجاح` });
+                onSuccess();
+            } else {
+                toast({ title: 'خطأ', description: res.error, variant: 'destructive' });
+            }
+        } catch (error: any) {
+            toast({ title: 'خطأ', description: error.message, variant: 'destructive' });
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    return (
+        <AlertDialog>
+            <AlertDialogTrigger asChild onClick={(e) => e.stopPropagation()}>
+                <Button variant="ghost" size="sm" className="h-8 w-8 p-0 bg-white/80 hover:bg-white">
+                    <Trash2 className="w-4 h-4 text-red-600" />
+                </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent onClick={(e) => e.stopPropagation()}>
+                <AlertDialogHeader>
+                    <AlertDialogTitle>هل أنت متأكد من الحذف؟</AlertDialogTitle>
+                    <AlertDialogDescription>
+                        سيتم حذف <strong>{account.name}</strong> نهائياً. لا يمكن التراجع عن هذا الإجراء.
+                        <br /><br />
+                        <strong>ملاحظة:</strong> لا يمكن حذف حساب مرتبط بحركات مالية أو سندات.
+                    </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                    <AlertDialogCancel>إلغاء</AlertDialogCancel>
+                    <AlertDialogAction
+                        onClick={handleDelete}
+                        disabled={loading}
+                        className="bg-red-600 hover:bg-red-700"
+                    >
+                        {loading ? 'جاري الحذف...' : 'حذف'}
+                    </AlertDialogAction>
+                </AlertDialogFooter>
+            </AlertDialogContent>
+        </AlertDialog>
     );
 }

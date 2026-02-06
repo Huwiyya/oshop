@@ -473,6 +473,124 @@ export async function createCashAccount(data: { name: string; currency: 'LYD' | 
     return newAccount;
 }
 
+/**
+ * Update Bank Account
+ */
+export async function updateBankAccount(id: string, data: {
+    name: string;
+    currency?: 'LYD' | 'USD';
+    accountNumber?: string;
+    bankName?: string
+}) {
+    try {
+        const { data: account, error } = await supabaseAdmin
+            .from('accounts')
+            .update({
+                name_ar: data.name,
+                name_en: data.name,
+                currency: data.currency,
+                description: `Bank: ${data.bankName || ''} - Account: ${data.accountNumber || ''}`
+            })
+            .eq('id', id)
+            .select()
+            .single();
+
+        if (error) return { success: false, error: error.message };
+        return { success: true, data: account };
+    } catch (error: any) {
+        return { success: false, error: error.message };
+    }
+}
+
+/**
+ * Update Cash Account
+ */
+export async function updateCashAccount(id: string, data: {
+    name: string;
+    currency?: 'LYD' | 'USD';
+    description?: string
+}) {
+    try {
+        const { data: account, error } = await supabaseAdmin
+            .from('accounts')
+            .update({
+                name_ar: data.name,
+                name_en: data.name,
+                currency: data.currency,
+                description: data.description
+            })
+            .eq('id', id)
+            .select()
+            .single();
+
+        if (error) return { success: false, error: error.message };
+        return { success: true, data: account };
+    } catch (error: any) {
+        return { success: false, error: error.message };
+    }
+}
+
+/**
+ * Delete Bank or Cash Account
+ * Validates no transactions exist
+ */
+export async function deleteBankAccount(id: string) {
+    try {
+        // Check for journal entries
+        const { data: journalLines } = await supabaseAdmin
+            .from('journal_entry_lines')
+            .select('id')
+            .eq('account_id', id)
+            .limit(1);
+
+        if (journalLines && journalLines.length > 0) {
+            return {
+                success: false,
+                error: 'لا يمكن حذف حساب بنكي مرتبط بحركات مالية. يرجى حذف الحركات أولاً.'
+            };
+        }
+
+        // Check for receipts/payments
+        const { data: receipts } = await supabaseAdmin
+            .from('receipts')
+            .select('id')
+            .or(`from_account_id.eq.${id},to_account_id.eq.${id}`)
+            .limit(1);
+
+        if (receipts && receipts.length > 0) {
+            return {
+                success: false,
+                error: 'لا يمكن حذف حساب بنكي مرتبط بسندات قبض. يرجى حذفها أولاً.'
+            };
+        }
+
+        const { data: payments } = await supabaseAdmin
+            .from('payments')
+            .select('id')
+            .or(`from_account_id.eq.${id},to_account_id.eq.${id}`)
+            .limit(1);
+
+        if (payments && payments.length > 0) {
+            return {
+                success: false,
+                error: 'لا يمكن حذف حساب بنكي مرتبط بسندات صرف. يرجى حذفها أولاً.'
+            };
+        }
+
+        // Delete the account
+        const { error } = await supabaseAdmin
+            .from('accounts')
+            .delete()
+            .eq('id', id);
+
+        if (error) return { success: false, error: error.message };
+        return { success: true };
+    } catch (error: any) {
+        return { success: false, error: error.message };
+    }
+}
+
+
 // --- إدارة الحسابات (تعديل وحذف) ---
 
 export async function getAllAccounts() {
