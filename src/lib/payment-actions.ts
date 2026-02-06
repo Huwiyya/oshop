@@ -241,9 +241,6 @@ export async function deletePayment(id: string) {
     }
 }
 
-}
-
-
 export async function updatePayment(id: string, data: Omit<Payment, 'id' | 'reference'>) {
     try {
         // 1. Get existing payment
