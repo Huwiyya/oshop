@@ -17,7 +17,7 @@ export default async function PaymentsPage() {
                     <h1 className="text-2xl font-bold">المدفوعات (Payments)</h1>
                     <p className="text-muted-foreground">سندات الصرف والمصروفات</p>
                 </div>
-                <Link href="/admin/accounting/payments/new">
+                <Link href="/accounting/payments/new">
                     <Button className="gap-2 bg-rose-600 hover:bg-rose-700">
                         <Plus className="w-4 h-4" />
                         سند صرف جديد

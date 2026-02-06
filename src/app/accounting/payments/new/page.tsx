@@ -51,7 +51,7 @@ export default function NewPaymentPage() {
         });
 
         if (res.success) {
-            router.push('/admin/accounting/payments');
+            router.push('/accounting/payments');
             router.refresh();
         } else {
             alert('Error: ' + res.error);
@@ -62,7 +62,7 @@ export default function NewPaymentPage() {
     return (
         <div className="max-w-3xl mx-auto space-y-6">
             <div className="flex items-center gap-4">
-                <Link href="/admin/accounting/payments">
+                <Link href="/accounting/payments">
                     <Button variant="ghost" size="icon">
                         <ArrowLeft className="w-4 h-4" />
                     </Button>

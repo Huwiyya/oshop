@@ -17,7 +17,7 @@ export default async function ReceiptsPage() {
                     <h1 className="text-2xl font-bold">المقبوضات (Receipts)</h1>
                     <p className="text-muted-foreground">سندات القبض والدخل النقدي</p>
                 </div>
-                <Link href="/admin/accounting/receipts/new">
+                <Link href="/accounting/receipts/new">
                     <Button className="gap-2 bg-emerald-600 hover:bg-emerald-700">
                         <Plus className="w-4 h-4" />
                         سند قبض جديد

@@ -155,7 +155,8 @@ export default function CreatePurchaseInvoice() {
                                     <Label>سعر الصرف</Label>
                                     <Input
                                         type="number" step="0.0001"
-                                        value={formData.exchangeRate}
+                                        placeholder="0.00"
+                                        value={formData.exchangeRate || ''}
                                         onChange={e => setFormData({ ...formData, exchangeRate: Number(e.target.value) })}
                                     />
                                 </div>
@@ -247,7 +248,8 @@ export default function CreatePurchaseInvoice() {
                                 <Label>المبلغ المدفوع</Label>
                                 <Input
                                     type="number"
-                                    value={formData.paidAmount}
+                                    placeholder="0.00"
+                                    value={formData.paidAmount || ''}
                                     onChange={e => setFormData({ ...formData, paidAmount: Number(e.target.value) })}
                                 />
                             </div>
@@ -288,8 +290,10 @@ export default function CreatePurchaseInvoice() {
 function AddItemDialog({ inventoryItems, onAdd, currency }: { inventoryItems: any[], onAdd: (item: PurchaseInvoiceItem) => void, currency: string }) {
     const [open, setOpen] = useState(false);
     const [selectedItemId, setSelectedItemId] = useState('');
-    const [quantity, setQuantity] = useState(1);
-    const [price, setPrice] = useState(0);
+
+    // Use string | number to allow empty input without forcing 0
+    const [quantity, setQuantity] = useState<string | number>(1);
+    const [price, setPrice] = useState<string | number>('');
     const [cardsText, setCardsText] = useState('');
 
     const selectedItem = inventoryItems.find(i => i.id === selectedItemId);
@@ -297,35 +301,30 @@ function AddItemDialog({ inventoryItems, onAdd, currency }: { inventoryItems: an
     const handleAdd = () => {
         if (!selectedItem) return;
 
+        // Convert to numbers safely
+        const finalQty = Number(quantity) || 0;
+        const finalPrice = Number(price) || 0;
+
+        if (finalQty <= 0) return; // Prevent zero quantity
+
         let cardNumbers: string[] = [];
         if (selectedItem.is_shein_card) {
-            // Split by newline and filter empty
             cardNumbers = cardsText.split('\n').map(s => s.trim()).filter(s => s !== '');
-            // Optional: Check if count matches quantity
-            if (cardNumbers.length !== quantity) {
-                // We can warn or auto-set quantity
-                // Let's auto-set quantity for correctness
-                // setQuantity(cardNumbers.length);
-                // But user might want to add later. Let's strict for now
-                if (cardNumbers.length === 0) {
-                    // Allow empty if they want to add later? No, better force usage.
-                }
-            }
         }
 
         onAdd({
             itemId: selectedItemId,
             description: selectedItem.name_ar,
-            quantity: quantity,
-            unitPrice: price,
-            total: quantity * price,
+            quantity: finalQty,
+            unitPrice: finalPrice,
+            total: finalQty * finalPrice,
             cardNumbers: selectedItem.is_shein_card ? cardNumbers : undefined
         });
         setOpen(false);
         // Reset
         setSelectedItemId('');
         setQuantity(1);
-        setPrice(0);
+        setPrice('');
         setCardsText('');
     };
 
@@ -359,11 +358,24 @@ function AddItemDialog({ inventoryItems, onAdd, currency }: { inventoryItems: an
                     <div className="grid grid-cols-2 gap-4">
                         <div className="space-y-2">
                             <Label>الكمية</Label>
-                            <Input type="number" min="1" value={quantity} onChange={e => setQuantity(Number(e.target.value))} />
+                            {/* Input now handles value as is, allowing empty string */}
+                            <Input
+                                type="number"
+                                min="1"
+                                value={quantity}
+                                onChange={e => setQuantity(e.target.value)}
+                            />
                         </div>
                         <div className="space-y-2">
                             <Label>سعر الشراء ({currency})</Label>
-                            <Input type="number" min="0" step="0.01" value={price} onChange={e => setPrice(Number(e.target.value))} />
+                            <Input
+                                type="number"
+                                min="0"
+                                step="0.01"
+                                placeholder="0.00"
+                                value={price}
+                                onChange={e => setPrice(e.target.value)}
+                            />
                         </div>
                     </div>
 
@@ -379,9 +391,9 @@ function AddItemDialog({ inventoryItems, onAdd, currency }: { inventoryItems: an
                                 value={cardsText}
                                 onChange={e => setCardsText(e.target.value)}
                             />
-                            {cardsText.split('\n').filter(x => x.trim()).length !== quantity && (
+                            {cardsText.split('\n').filter(x => x.trim()).length !== Number(quantity) && (
                                 <p className="text-xs text-red-500">
-                                    تنبيه: عدد الأرقام المدخلة ({cardsText.split('\n').filter(x => x.trim()).length}) لا يطابق الكمية ({quantity}).
+                                    تنبيه: عدد الأرقام المدخلة ({cardsText.split('\n').filter(x => x.trim()).length}) لا يطابق الكمية ({Number(quantity)}).
                                 </p>
                             )}
                         </div>

@@ -8,7 +8,7 @@ import { Input } from '@/components/ui/input';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { getTrialBalance, getIncomeStatement, getBalanceSheet } from '@/lib/report-actions';
 import { formatCurrency } from '@/lib/utils';
-import { Printer } from 'lucide-react';
+import { Printer, DollarSign } from 'lucide-react';
 
 export default function FinancialReportsPage() {
     const [startDate, setStartDate] = useState(new Date().getFullYear() + '-01-01');
@@ -45,9 +45,23 @@ export default function FinancialReportsPage() {
         <div className="space-y-6 pb-20">
             <div className="flex justify-between items-center">
                 <h1 className="text-2xl font-bold">التقارير المالية الختامية</h1>
-                <Button variant="outline" onClick={() => window.print()} className="gap-2">
-                    <Printer className="w-4 h-4" /> طباعة
-                </Button>
+                <div className="flex gap-2">
+                    <Button variant="default" onClick={() => window.location.href = '/accounting/reports/cash-flow'} className="gap-2 bg-blue-600 hover:bg-blue-700">
+                        <Printer className="w-4 h-4" />
+                        قائمة التدفقات النقدية
+                    </Button>
+                    <Button variant="secondary" onClick={() => window.location.href = '/accounting/reports/income-statement'} className="gap-2 bg-slate-200 hover:bg-slate-300 text-slate-800">
+                        <Printer className="w-4 h-4" />
+                        قائمة الدخل التفصيلية
+                    </Button>
+                    <Button variant="secondary" onClick={() => window.location.href = '/accounting/reports/cost-of-revenue'} className="gap-2 bg-orange-100 hover:bg-orange-200 text-orange-900 border border-orange-200">
+                        <DollarSign className="w-4 h-4" />
+                        تقرير تكلفة المبيعات
+                    </Button>
+                    <Button variant="outline" onClick={() => window.print()} className="gap-2">
+                        <Printer className="w-4 h-4" /> طباعة
+                    </Button>
+                </div>
             </div>
 
             <div className="flex gap-4 items-end bg-white p-4 rounded-lg border shadow-sm">
@@ -141,9 +155,24 @@ export default function FinancialReportsPage() {
                                         </div>
                                     </div>
 
+                                    {/* COGS */}
+                                    <div className="space-y-2">
+                                        <h3 className="font-semibold text-orange-700 bg-orange-50 p-2 rounded">تكلفة الإيرادات</h3>
+                                        {incomeData.cogs?.map((r: any) => (
+                                            <div key={r.accountCode} className="flex justify-between px-4 py-2 border-b text-sm">
+                                                <span>{r.accountName} <span className="text-xs text-slate-400">({r.accountCode})</span></span>
+                                                <span>{formatCurrency(Math.abs(r.balance))}</span>
+                                            </div>
+                                        ))}
+                                        <div className="flex justify-between px-4 py-2 font-bold bg-slate-50">
+                                            <span>إجمالي تكلفة الإيرادات</span>
+                                            <span>{formatCurrency(incomeData.totalCOGS || 0)}</span>
+                                        </div>
+                                    </div>
+
                                     {/* Expenses */}
                                     <div className="space-y-2">
-                                        <h3 className="font-semibold text-red-700 bg-red-50 p-2 rounded">المصروفات</h3>
+                                        <h3 className="font-semibold text-red-700 bg-red-50 p-2 rounded">المصروفات التشغيلية</h3>
                                         {incomeData.expenses.map((r: any) => (
                                             <div key={r.accountCode} className="flex justify-between px-4 py-2 border-b text-sm">
                                                 <span>{r.accountName} <span className="text-xs text-slate-400">({r.accountCode})</span></span>

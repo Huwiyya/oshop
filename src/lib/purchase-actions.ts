@@ -3,6 +3,7 @@
 import { supabaseAdmin } from './supabase-admin';
 import { addInventoryStock, deleteInventoryTransaction } from './inventory-actions';
 import { createJournalEntry, type JournalEntryLine } from './journal-actions';
+import { createPayment } from './payment-actions';
 
 // --- أنواع البيانات ---
 export type PurchaseInvoiceItem = {
@@ -174,35 +175,28 @@ export async function createPurchaseInvoice(data: CreateInvoiceData) {
         });
     }
 
-    // 6. Create Payment Record if paid
+    // 6. Create Payment Record if paid -> Create Formal Payment
     if (data.paidAmount > 0) {
-        // Create Payment Journal Entry
-        // Dr. Supplier
-        //   Cr. Cash/Bank (PaymentAccount)
+        // Use the centralized createPayment action to ensure "Payments Register" is updated
+        // Dr. Supplier (Liability Decrease)
+        // Cr. Cash/Bank (Asset Decrease)
 
-        // We need the payment account ID. If not provided, we can't post.
-        // Assuming data.paymentAccountId is mandatory if paidAmount > 0
         if (data.paymentAccountId) {
-            await createJournalEntry({
+            await createPayment({
                 date: data.invoiceDate,
+                paymentAccountId: data.paymentAccountId,    // Credit: Cash/Bank
+                paymentAccountName: '', // Optional
+                payee: `مورد فاتورة ${invoiceNumber}`,
                 description: `سداد فاتورة شراء #${invoiceNumber}`,
-                referenceType: 'payment',
-                referenceId: invoiceNumber,
-                lines: [
+                amount: data.paidAmount,
+                currency: data.currency,
+                lineItems: [
                     {
-                        accountId: data.supplierId,
-                        description: `سداد جزئي/كلي للفاتورة #${invoiceNumber}`,
-                        debit: data.paidAmount,
-                        credit: 0
-                    },
-                    {
-                        accountId: data.paymentAccountId,
-                        description: `صرف نقدية - فاتورة #${invoiceNumber}`,
-                        debit: 0,
-                        credit: data.paidAmount
+                        accountId: data.supplierId, // Debit: Supplier (Payable)
+                        amount: data.paidAmount,
+                        description: `سداد للمورد - فاتورة شراء #${invoiceNumber}`
                     }
-                ],
-                currency: data.currency
+                ]
             });
         }
     }

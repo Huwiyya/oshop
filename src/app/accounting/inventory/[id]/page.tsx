@@ -148,7 +148,27 @@ function InventoryTransactionsTable({ itemId, onRefresh }: { itemId: string, onR
     const { toast } = useToast();
 
     const loadTransactions = () => {
-        getItemTransactions(itemId).then(setTransactions);
+        getItemTransactions(itemId).then(data => {
+            if (!data) return;
+            // Calculate running balance
+            // Sort by date ASC first
+            const sorted = [...data].sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+
+            let balance = 0;
+            const withBalance = sorted.map(trx => {
+                // Determine direction based on type
+                // purchase, transfer_in: +
+                // sale, transfer_out: -
+                const isIn = trx.transaction_type === 'purchase' || trx.transaction_type === 'transfer_in';
+                const qty = Number(trx.quantity) || 0;
+                balance += isIn ? qty : -qty;
+
+                return { ...trx, balance };
+            });
+
+            // Set transactions to display (DESC)
+            setTransactions(withBalance.reverse());
+        });
     };
 
     useEffect(() => {
@@ -182,77 +202,82 @@ function InventoryTransactionsTable({ itemId, onRefresh }: { itemId: string, onR
                 </CardTitle>
             </CardHeader>
             <CardContent>
-                <Table>
-                    <TableHeader>
-                        <TableRow>
-                            <TableHead>التاريخ</TableHead>
-                            <TableHead>نوع الحركة</TableHead>
-                            <TableHead>المرجع (فاتورة/قيد)</TableHead>
-                            <TableHead className="text-emerald-600">وارد (شراء)</TableHead>
-                            <TableHead className="text-red-600">صادر (بيع)</TableHead>
-                            <TableHead>تكلفة الوحدة</TableHead>
-                            <TableHead>التكلفة الإجمالية</TableHead>
-                            <TableHead>ملاحظات</TableHead>
-                            <TableHead className="w-[50px]"></TableHead>
-                        </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                        {transactions.length === 0 ? (
+                <div className="overflow-auto border rounded-xl">
+                    <Table>
+                        <TableHeader className="bg-slate-50">
                             <TableRow>
-                                <TableCell colSpan={9} className="text-center py-6 text-slate-500">
-                                    لا توجد حركات مسجلة
-                                </TableCell>
+                                <TableHead>التاريخ</TableHead>
+                                <TableHead>نوع الحركة</TableHead>
+                                <TableHead>المرجع</TableHead>
+                                <TableHead className="text-emerald-600">وارد</TableHead>
+                                <TableHead className="text-red-600">صادر</TableHead>
+                                <TableHead className="bg-slate-100 font-bold text-slate-700">الرصيد</TableHead>
+                                <TableHead>التكلفة</TableHead>
+                                <TableHead>الإجمالي</TableHead>
+                                <TableHead className="w-[50px]"></TableHead>
                             </TableRow>
-                        ) : (
-                            transactions.map((trx) => (
-                                <TableRow key={trx.id}>
-                                    <TableCell className="font-mono text-xs">{trx.transaction_date}</TableCell>
-                                    <TableCell>
-                                        <Badge variant="outline" className={
-                                            trx.transaction_type === 'purchase' ? 'bg-emerald-50 text-emerald-700' :
-                                                trx.transaction_type === 'sale' ? 'bg-red-50 text-red-700' :
-                                                    'bg-slate-50'
-                                        }>
-                                            {getTransactionTypeLabel(trx.transaction_type)}
-                                        </Badge>
-                                    </TableCell>
-                                    <TableCell className="text-xs">
-                                        {trx.reference_type === 'purchase_invoice' ? 'فاتورة شراء' :
-                                            trx.reference_type === 'sales_invoice' ? 'فاتورة مبيعات' : trx.reference_type || '-'}
-                                        {trx.reference_id ? ` #${trx.reference_id.substring(0, 6)}...` : ''}
-                                    </TableCell>
-                                    <TableCell className="font-bold text-emerald-600">
-                                        {trx.transaction_type === 'purchase' || trx.transaction_type === 'transfer_in'
-                                            ? trx.quantity
-                                            : '-'}
-                                    </TableCell>
-                                    <TableCell className="font-bold text-red-600">
-                                        {trx.transaction_type === 'sale' || trx.transaction_type === 'transfer_out'
-                                            ? trx.quantity
-                                            : '-'}
-                                    </TableCell>
-                                    <TableCell className="font-mono text-xs">
-                                        {formatCurrency(trx.unit_cost)}
-                                    </TableCell>
-                                    <TableCell className="font-mono text-xs font-bold">
-                                        {formatCurrency(trx.total_cost)}
-                                    </TableCell>
-                                    <TableCell className="text-xs text-slate-500 max-w-[200px] truncate">
-                                        {trx.notes}
-                                        {trx.layer?.card_number && <span className="block text-purple-600">💳 {trx.layer.card_number}</span>}
-                                    </TableCell>
-                                    <TableCell>
-                                        {trx.transaction_type === 'purchase' && (
-                                            <Button variant="ghost" size="icon" className="h-6 w-6 text-slate-400 hover:text-red-600" onClick={() => handleDelete(trx.id, trx.transaction_type)}>
-                                                <Trash className="w-3 h-3" />
-                                            </Button>
-                                        )}
+                        </TableHeader>
+                        <TableBody>
+                            {transactions.length === 0 ? (
+                                <TableRow>
+                                    <TableCell colSpan={9} className="text-center py-8 text-slate-500">
+                                        لا توجد حركات مسجلة
                                     </TableCell>
                                 </TableRow>
-                            ))
-                        )}
-                    </TableBody>
-                </Table>
+                            ) : (
+                                transactions.map((trx) => (
+                                    <TableRow key={trx.id}>
+                                        <TableCell className="font-mono text-xs text-nowrap">{trx.transaction_date}</TableCell>
+                                        <TableCell>
+                                            <Badge variant="outline" className={
+                                                trx.transaction_type === 'purchase' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
+                                                    trx.transaction_type === 'sale' ? 'bg-red-50 text-red-700 border-red-200' :
+                                                        'bg-slate-50'
+                                            }>
+                                                {getTransactionTypeLabel(trx.transaction_type)}
+                                            </Badge>
+                                        </TableCell>
+                                        <TableCell className="text-xs">
+                                            <div className="flex flex-col">
+                                                <span>
+                                                    {trx.reference_type === 'purchase_invoice' ? 'فاتورة شراء' :
+                                                        trx.reference_type === 'sales_invoice' ? 'فاتورة مبيعات' : trx.reference_type || '-'}
+                                                </span>
+                                                {trx.reference_id && <span className="text-slate-400 font-mono text-[10px]">#{trx.reference_id.substring(0, 6)}</span>}
+                                            </div>
+                                        </TableCell>
+                                        <TableCell className="font-bold text-emerald-600 bg-emerald-50/30">
+                                            {trx.transaction_type === 'purchase' || trx.transaction_type === 'transfer_in'
+                                                ? trx.quantity
+                                                : '-'}
+                                        </TableCell>
+                                        <TableCell className="font-bold text-red-600 bg-red-50/30">
+                                            {trx.transaction_type === 'sale' || trx.transaction_type === 'transfer_out'
+                                                ? trx.quantity
+                                                : '-'}
+                                        </TableCell>
+                                        <TableCell className="font-bold font-mono bg-slate-50">
+                                            {trx.balance}
+                                        </TableCell>
+                                        <TableCell className="font-mono text-xs">
+                                            {formatCurrency(trx.unit_cost)}
+                                        </TableCell>
+                                        <TableCell className="font-mono text-xs text-slate-500">
+                                            {formatCurrency(trx.total_cost)}
+                                        </TableCell>
+                                        <TableCell>
+                                            {trx.transaction_type === 'purchase' && (
+                                                <Button variant="ghost" size="icon" className="h-6 w-6 text-slate-400 hover:text-red-600" onClick={() => handleDelete(trx.id, trx.transaction_type)}>
+                                                    <Trash className="w-3 h-3" />
+                                                </Button>
+                                            )}
+                                        </TableCell>
+                                    </TableRow>
+                                ))
+                            )}
+                        </TableBody>
+                    </Table>
+                </div>
             </CardContent>
         </Card>
     );

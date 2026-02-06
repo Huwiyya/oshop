@@ -34,6 +34,7 @@ export async function createInventoryItem(data: {
     name_en?: string;
     category?: string; // e.g., 'shein_cards'
     description?: string;
+    revenue_account_id?: string;
 }) {
     // Get Inventory Account (Assets -> Inventory)
     const { data: inventoryAcc } = await supabaseAdmin
@@ -55,6 +56,7 @@ export async function createInventoryItem(data: {
             ...data,
             inventory_account_id: inventoryAcc?.id, // Link to GL
             cogs_account_id: cogsAcc?.id,
+            revenue_account_id: data.revenue_account_id, // Link to Revenue Account
             is_shein_card: data.category === 'cards',
             unit: data.category === 'cards' ? 'card' : 'piece'
         })
@@ -122,12 +124,26 @@ export async function addInventoryStock(data: {
         notes: data.notes || 'إضافة رصيد مخزني'
     });
 
-    // 4. Update Item Total Quantity
+    // 4. Update Item Total Quantity & Weighted Average Cost
+    const currentQty = Number(item.quantity_on_hand) || 0;
+    // If average_cost is null or 0, use unitCost as the starting cost
+    const currentAvgCost = Number(item.average_cost) || 0;
+
+    // Calculate new Weighted Average
+    // Formula: ((OldQty * OldAvg) + (NewQty * NewCost)) / (OldQty + NewQty)
+    const totalOldValue = currentQty * currentAvgCost;
+    const totalNewValue = Number(data.quantity) * Number(data.unitCost);
+    const newTotalQty = currentQty + Number(data.quantity);
+
+    const newAvgCost = newTotalQty > 0
+        ? (totalOldValue + totalNewValue) / newTotalQty
+        : data.unitCost; // If quantity becomes 0 (unlikely here as we add), keep last cost or new cost.
+
     await supabaseAdmin
         .from('inventory_items')
         .update({
-            quantity_on_hand: Number(item.quantity_on_hand) + Number(data.quantity),
-            average_cost: data.unitCost // Simplified update, ideally weighted avg
+            quantity_on_hand: newTotalQty,
+            average_cost: newAvgCost
         })
         .eq('id', data.itemId);
 

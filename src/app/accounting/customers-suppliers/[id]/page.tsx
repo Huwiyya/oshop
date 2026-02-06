@@ -28,7 +28,37 @@ export default function AccountLedgerPage() {
                     getAccountLedger(id as string)
                 ]);
                 setAccount(accData);
-                setTransactions(transData || []);
+
+                // Calculate Running Balance
+                // 1. Sort Oldest to Newest
+                // transData comes Newest first (DESC) from backend usually, let's ensure.
+                // We trust backend sorting, so simple reverse makes it Oldest First.
+                const sortedAsc = [...(transData || [])].reverse();
+
+                // 2. Determine Normal Balance
+                // Assets/Expenses = Debit Normal
+                // Liab/Equity/Revenue = Credit Normal
+                const isCreditNormal = accData.account_code.startsWith('2') ||
+                    accData.account_code.startsWith('3') ||
+                    accData.account_code.startsWith('4');
+
+                let balance = 0;
+                const withBalance = sortedAsc.map(t => {
+                    const dr = Number(t.debit) || 0;
+                    const cr = Number(t.credit) || 0;
+
+                    if (isCreditNormal) {
+                        balance += (cr - dr); // Increase with Credit
+                    } else {
+                        balance += (dr - cr); // Increase with Debit
+                    }
+
+                    return { ...t, runningBalance: balance, isCreditNormal };
+                });
+
+                // 3. Reverse back to Newest First for Display
+                setTransactions(withBalance.reverse());
+
             } catch (error) {
                 console.error("Error loading ledger:", error);
             } finally {
@@ -125,10 +155,6 @@ export default function AccountLedgerPage() {
                                     </TableCell>
                                 </TableRow>
                             ) : (
-                                // Note: Balance calculation usually happens from oldest to newest. 
-                                // But we fetched newest first. We might need to reverse or calculate carefully.
-                                // For display purposes in a simple ledger, usually we start with opening balance.
-                                // Let's just list transactions for now.
                                 transactions.map((trx) => (
                                     <TableRow key={trx.id} className="group hover:bg-slate-50 transition-colors">
                                         <TableCell className="font-mono text-xs">
@@ -151,8 +177,8 @@ export default function AccountLedgerPage() {
                                         <TableCell className="text-left font-mono">
                                             {Number(trx.credit) > 0 ? formatCurrency(trx.credit) : '-'}
                                         </TableCell>
-                                        <TableCell className="text-left font-mono font-bold text-slate-700">
-                                            - {/* Balance calculation needs cumulative logic */}
+                                        <TableCell className={`text-left font-mono font-bold ${trx.runningBalance < 0 ? 'text-red-600' : 'text-slate-700'}`}>
+                                            {formatCurrency(Math.abs(trx.runningBalance))}
                                         </TableCell>
                                     </TableRow>
                                 ))

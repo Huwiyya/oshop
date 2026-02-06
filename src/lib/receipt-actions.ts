@@ -22,52 +22,95 @@ export interface Receipt {
 // For now, we will use the same 'journal_entries' but with a specific type flag or just dedicated table.
 // Let's stick to the plan: `accounting_transactions`.
 
+import { createJournalEntry } from './journal-actions';
+
 export async function createReceipt(data: Omit<Receipt, 'id' | 'reference'>) {
     try {
-        const reference = `REC-${Date.now().toString().slice(-6)}`;
+        // 1. إنشاء قيد اليومية (The Source of Truth)
+        // المدين: حساب القبض (Cash/Bank) - زيادة أصول
+        // الدائن: حساب الإيراد/العميل (Line Items)
 
-        // 1. Create Transaction Record
-        const { data: trx, error: trxError } = await supabaseAdmin.from('accounting_transactions').insert({
+        const journalLines = [
+            // Debit Line (حساب القبض - مدين)
+            {
+                accountId: data.receiveAccountId,
+                debit: data.amount,
+                credit: 0,
+                description: `سند قبض: ${data.description}`
+            },
+            // Credit Lines (حسابات الإيراد/العملاء - دائن)
+            ...data.lineItems.map(item => ({
+                accountId: item.accountId,
+                credit: item.amount,
+                debit: 0,
+                description: item.description || data.description
+            }))
+        ];
+
+        // استدعاء دالة إنشاء القيد
+        const journalEntryId = await createJournalEntry({
             date: data.date,
-            reference: reference,
-            type: 'receipt',
-            payer: data.payer,
-            related_user_id: data.relatedUserId, // Save the link
-            account_id: data.receiveAccountId, // Debit (Increase Asset)
-            description: data.description,
-            amount: data.amount,
-            currency: data.currency,
-            line_items: data.lineItems // Credit (Income/Equity/etc)
+            description: `سند قبض من: ${data.payer || 'غير محدد'} - ${data.description}`,
+            referenceType: 'receipt',
+            lines: journalLines
+        });
+
+        // 2. إنشاء سند القبض في جدول receipts الجديد
+        // توليد رقم السند
+        const { count } = await supabaseAdmin.from('receipts').select('*', { count: 'exact', head: true });
+        const receiptNumber = `REC-${new Date().getFullYear()}-${String((count || 0) + 1).padStart(4, '0')}`;
+
+        const { data: newReceipt, error: receiptError } = await supabaseAdmin.from('receipts').insert({
+            receipt_number: receiptNumber,
+            receipt_date: data.date,
+            customer_id: data.relatedUserId || null,
+            total_amount: data.amount,
+            payment_method: 'cash',
+            bank_account_id: data.receiveAccountId,
+            main_description: data.description,
+            journal_entry_id: journalEntryId,
+            status: 'posted'
         }).select().single();
 
-        if (trxError) {
-            // If table doesn't exist, we fallback to error. User needs to run SQL.
-            console.error('DB Error', trxError);
-            return { success: false, error: 'Database error. Make sure accounting_transactions table exists.' };
+        if (receiptError) throw new Error('فشل إنشاء سند القبض: ' + receiptError.message);
+
+        // 3. إدخال تفاصيل السند (Lines)
+        if (data.lineItems.length > 0) {
+            const receiptLines = data.lineItems.map((item, index) => ({
+                receipt_id: newReceipt.id,
+                account_id: item.accountId,
+                amount: item.amount,
+                description: item.description || '',
+                line_number: index + 1
+            }));
+
+            const { error: linesError } = await supabaseAdmin.from('receipt_lines').insert(receiptLines);
+            if (linesError) console.error('Warning: Failed to insert receipt lines details', linesError);
         }
 
-        // 2. Update Balance of the Receiving Account (Cash/Bank)
-        // We use rpc or manual update.
-        // Assuming 'treasury_cards_v4' holds the balance.
+        // 4. (Legacy Support) تحديث الأرصدة القديمة
         const { error: balanceError } = await supabaseAdmin.rpc('increment_balance', {
             row_id: data.receiveAccountId,
             amount: data.amount
         });
 
-        // Fallback if RPC missing (manual update - risky concurrency but okay for prototype)
+        // Fallback
         if (balanceError) {
-            const { data: acc } = await supabaseAdmin.from('treasury_cards_v4').select('balance').eq('id', data.receiveAccountId).single();
+            const { data: acc } = await supabaseAdmin.from('accounts').select('current_balance').eq('id', data.receiveAccountId).single();
             if (acc) {
-                await supabaseAdmin.from('treasury_cards_v4').update({ balance: acc.balance + data.amount }).eq('id', data.receiveAccountId);
+                await supabaseAdmin.from('accounts').update({
+                    current_balance: Number(acc.current_balance) + Number(data.amount)
+                }).eq('id', data.receiveAccountId);
             }
         }
 
-        revalidatePath('/admin/accounting/receipts');
-        revalidatePath('/admin/accounting/cash-accounts');
-        revalidatePath('/admin/accounting/bank-accounts');
-        return { success: true, id: trx.id };
+        revalidatePath('/accounting/receipts');
+        revalidatePath('/accounting/dashboard');
+        revalidatePath('/accounting/cash-bank');
+        return { success: true, id: newReceipt.id };
 
     } catch (e: any) {
+        console.error('Create Receipt Error:', e);
         return { success: false, error: e.message };
     }
 }

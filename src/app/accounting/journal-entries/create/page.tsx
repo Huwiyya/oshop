@@ -9,20 +9,28 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Textarea } from '@/components/ui/textarea';
-import { Plus, Trash, Save, ArrowLeft, Box, Check } from 'lucide-react';
-import { formatCurrency } from '@/lib/utils';
+import { Plus, Trash, ArrowLeft, Box, Check, ChevronsUpDown } from 'lucide-react';
+import { formatCurrency, cn } from '@/lib/utils';
 import { useToast } from '@/components/ui/use-toast';
 import { createJournalEntry } from '@/lib/journal-actions';
-import { supabase } from '@/lib/supabase'; // Client side for direct fetching if needed or use action
-import { getInventoryItems } from '@/lib/inventory-actions'; // For the popup
-
-// We need accounts list
-import { getEmployees } from '@/lib/payroll-actions'; // Just using this to get accounts? No better create getAccounts helper
+import { supabase } from '@/lib/supabase';
+import { getInventoryItems } from '@/lib/inventory-actions';
+import {
+    Command,
+    CommandEmpty,
+    CommandGroup,
+    CommandInput,
+    CommandItem,
+    CommandList,
+} from "@/components/ui/command"
+import {
+    Popover,
+    PopoverContent,
+    PopoverTrigger,
+} from "@/components/ui/popover"
 
 // Quick helper to fetch all accounts
 async function getAccounts() {
-    // This should ideally be in accoutning-actions
     const { data } = await supabase.from('accounts').select('id, name_ar, account_code').eq('is_active', true).neq('is_parent', true).order('account_code');
     return data || [];
 }
@@ -171,22 +179,11 @@ export default function CreateJournalEntryPage() {
                                 {lines.map((line) => (
                                     <TableRow key={line.id}>
                                         <TableCell>
-                                            <Select
+                                            <AccountSelector
+                                                accounts={accounts}
                                                 value={line.accountId}
-                                                onValueChange={v => updateLine(line.id, 'accountId', v)}
-                                            >
-                                                <SelectTrigger className="h-9">
-                                                    <SelectValue placeholder="اختر الحساب..." />
-                                                </SelectTrigger>
-                                                <SelectContent>
-                                                    {accounts.map(acc => (
-                                                        <SelectItem key={acc.id} value={acc.id}>
-                                                            <span className="font-mono text-slate-400 mr-2">{acc.account_code}</span>
-                                                            {acc.name_ar}
-                                                        </SelectItem>
-                                                    ))}
-                                                </SelectContent>
-                                            </Select>
+                                                onChange={(v) => updateLine(line.id, 'accountId', v)}
+                                            />
                                         </TableCell>
                                         <TableCell>
                                             <Input
@@ -269,8 +266,62 @@ export default function CreateJournalEntryPage() {
     );
 }
 
-// Simple Popover for Inventory Selection inside the row
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+function AccountSelector({ accounts, value, onChange }: { accounts: any[], value: string, onChange: (val: string) => void }) {
+    const [open, setOpen] = useState(false)
+    const selectedAccount = accounts.find((account) => account.id === value)
+
+    return (
+        <Popover open={open} onOpenChange={setOpen}>
+            <PopoverTrigger asChild>
+                <Button
+                    variant="outline"
+                    role="combobox"
+                    aria-expanded={open}
+                    className="w-full justify-between font-normal px-2"
+                >
+                    {selectedAccount
+                        ? <span className="truncate flex items-center gap-2"><span className="font-mono text-slate-500 text-xs">{selectedAccount.account_code}</span> {selectedAccount.name_ar}</span>
+                        : <span className="text-slate-500">اختر الحساب...</span>}
+                    <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-[350px] p-0" align="start">
+                <Command filter={(value, search) => {
+                    const acc = accounts.find(a => a.id === value);
+                    if (!acc) return 0;
+                    const text = `${acc.account_code} ${acc.name_ar}`.toLowerCase();
+                    return text.includes(search.toLowerCase()) ? 1 : 0;
+                }}>
+                    <CommandInput placeholder="بحث برقم الحساب أو الاسم..." />
+                    <CommandList>
+                        <CommandEmpty>لا يوجد حساب.</CommandEmpty>
+                        <CommandGroup className="max-h-[300px] overflow-auto">
+                            {accounts.map((account) => (
+                                <CommandItem
+                                    key={account.id}
+                                    value={account.id}
+                                    onSelect={(currentValue) => {
+                                        onChange(currentValue)
+                                        setOpen(false)
+                                    }}
+                                >
+                                    <Check
+                                        className={cn(
+                                            "mr-2 h-4 w-4",
+                                            value === account.id ? "opacity-100" : "opacity-0"
+                                        )}
+                                    />
+                                    <span className="font-mono text-slate-500 mr-2">{account.account_code}</span>
+                                    <span className="truncate">{account.name_ar}</span>
+                                </CommandItem>
+                            ))}
+                        </CommandGroup>
+                    </CommandList>
+                </Command>
+            </PopoverContent>
+        </Popover>
+    )
+}
 
 function InventoryPopover({ line, items, onSave }: { line: LineItem, items: any[], onSave: (id: string, qty: number) => void }) {
     const hasInventory = Boolean(line.inventoryItemId);

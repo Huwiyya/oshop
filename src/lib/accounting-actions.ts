@@ -25,6 +25,7 @@ export type DashboardSummary = {
 };
 
 // جلب ملخص الحسابات حسب النوع (للمركز المالي وقائمة الدخل)
+// جلب ملخص الحسابات حسب النوع (للمركز المالي وقائمة الدخل)
 export async function getAccountsSummary(date?: string): Promise<{
     assets: AccountSummary[];
     liabilities: AccountSummary[];
@@ -32,9 +33,7 @@ export async function getAccountsSummary(date?: string): Promise<{
     revenue: AccountSummary[];
     expenses: AccountSummary[];
 }> {
-    // في المرحلة الأولى، سنعتمد على الأرصدة الحالية في جدول accounts
-    // لاحقاً سنقوم بحساب الأرصدة بناءً على التاريخ من جدول account_transactions
-
+    // 1. Fetch all active accounts (Parents and Children)
     const { data: accounts, error } = await supabaseAdmin
         .from('accounts')
         .select(`
@@ -43,18 +42,73 @@ export async function getAccountsSummary(date?: string): Promise<{
             name_ar,
             name_en,
             current_balance,
+            level,
+            parent_id,
+            is_parent,
             account_type:account_types!inner (
                 category,
                 normal_balance
             )
         `)
         .eq('is_active', true)
-        .eq('is_parent', false); // نأخذ الحسابات الفرعية فقط للجمع
+        .order('account_code');
 
     if (error) {
         console.error('Error fetching accounts summary:', error);
         return { assets: [], liabilities: [], equity: [], revenue: [], expenses: [] };
     }
+
+    // 2. Build Hierarchy & Calculate Balances (Roll-up)
+    const accountMap = new Map<string, any>();
+    accounts.forEach((acc: any) => {
+        acc.children = [];
+        acc.computed_balance = Number(acc.current_balance) || 0;
+        accountMap.set(acc.id, acc);
+    });
+
+    const roots: any[] = [];
+    accounts.forEach((acc: any) => {
+        if (acc.parent_id) {
+            const parent = accountMap.get(acc.parent_id);
+            if (parent) parent.children.push(acc);
+        } else {
+            roots.push(acc);
+        }
+    });
+
+    // Recursive function to sum balances up the tree
+    const aggregateBalance = (node: any): number => {
+        if (!node.children || node.children.length === 0) {
+            return node.computed_balance;
+        }
+        const childrenSum = node.children.reduce((sum: number, child: any) => sum + aggregateBalance(child), 0);
+        // If parent has its own balance (should be 0 usually), add it. 
+        // We overwrite computed_balance with the sum for display.
+        node.computed_balance = childrenSum + (node.is_parent ? 0 : node.computed_balance);
+        return node.computed_balance;
+    };
+
+    roots.forEach(aggregateBalance);
+
+    // 3. Filter for Summary View
+    // We want to show Level 3 accounts (e.g., Cash, Receivables, Inventory) as summaries.
+    // Also include any leaf accounts that are Level 1 or 2 (unlikely but possible).
+    // essentially: If an account is Level 3, show it. If it's Level < 3 and has no children, show it.
+    // Level 4+ are details (Customers, Specific Items) -> Hidden in summary.
+
+    // We will flattening the list again but filtering.
+    const summaryAccounts = accounts.filter((acc: any) => {
+        // Show Level 3 accounts (e.g. 1120 Receivables)
+        if (acc.level === 3) return true;
+
+        // Show Level 2 accounts ONLY if they define a main revenue/expense category directly (like Sales 4100)
+        // and aren't just containers for Level 3.
+        // Actually, Revenue (4000) -> Sales (4100). 4100 is Level 2.
+        if (acc.level === 2 && acc.account_type.category === 'revenue') return true;
+        if (acc.level === 2 && acc.account_type.category === 'expense') return true;
+
+        return false;
+    });
 
     const result = {
         assets: [] as AccountSummary[],
@@ -64,14 +118,17 @@ export async function getAccountsSummary(date?: string): Promise<{
         expenses: [] as AccountSummary[]
     };
 
-    // تصنيف الحسابات
-    accounts?.forEach((acc: any) => {
+    // 4. Distribute to Categories
+    summaryAccounts.forEach((acc: any) => {
+        // Use computed_balance instead of current_balance
+        const summaryAcc = { ...acc, current_balance: acc.computed_balance };
+
         const category = acc.account_type.category;
-        if (category === 'asset') result.assets.push(acc);
-        else if (category === 'liability') result.liabilities.push(acc);
-        else if (category === 'equity') result.equity.push(acc);
-        else if (category === 'revenue') result.revenue.push(acc);
-        else if (category === 'expense') result.expenses.push(acc);
+        if (category === 'asset') result.assets.push(summaryAcc);
+        else if (category === 'liability') result.liabilities.push(summaryAcc);
+        else if (category === 'equity') result.equity.push(summaryAcc);
+        else if (category === 'revenue') result.revenue.push(summaryAcc);
+        else if (category === 'expense') result.expenses.push(summaryAcc);
     });
 
     return result;
@@ -218,7 +275,10 @@ export async function getAccountDetails(accountId: string) {
         .eq('id', accountId)
         .single();
 
-    if (error) return null;
+    if (error) {
+        console.error('getAccountDetails Error:', error, 'ID:', accountId);
+        return null;
+    }
     return data;
 }
 
@@ -318,4 +378,120 @@ export async function createCashAccount(data: { name: string; currency: 'LYD' | 
 
     if (error) throw new Error(error.message);
     return newAccount;
+}
+
+// --- إدارة الحسابات (تعديل وحذف) ---
+
+export async function getAllAccounts() {
+    const { data, error } = await supabaseAdmin
+        .from('accounts')
+        .select(`
+            *,
+            account_type:account_types(name_ar)
+        `)
+        .order('account_code', { ascending: true });
+
+    if (error) {
+        console.error('Error fetching accounts:', error);
+        return [];
+    }
+    return data;
+}
+
+export async function updateAccount(id: string, data: { name_ar: string; name_en?: string; description?: string }) {
+    const { error } = await supabaseAdmin
+        .from('accounts')
+        .update(data)
+        .eq('id', id);
+
+    if (error) return { success: false, error: error.message };
+    return { success: true };
+}
+
+export async function toggleAccountStatus(id: string, isActive: boolean) {
+    const { error } = await supabaseAdmin
+        .from('accounts')
+        .update({ is_active: isActive })
+        .eq('id', id);
+
+    if (error) return { success: false, error: error.message };
+    return { success: true };
+}
+
+export async function createAccount(data: {
+    name_ar: string;
+    name_en?: string;
+    parent_id: string;
+    description?: string;
+    is_active?: boolean;
+}) {
+    // 1. Get Parent to inherit type/currency and generate code
+    const { data: parent } = await supabaseAdmin.from('accounts').select('*').eq('id', data.parent_id).single();
+    if (!parent) return { success: false, error: 'الحساب الرئيسي غير موجود' };
+
+    // 2. Generate Code
+    const { data: lastChild } = await supabaseAdmin
+        .from('accounts')
+        .select('account_code')
+        .eq('parent_id', data.parent_id)
+        .order('account_code', { ascending: false })
+        .limit(1)
+        .single();
+
+    let newCode;
+    if (lastChild) {
+        // Simple increment logic. 
+        // Note: JS numbers lose precision for very large codes, but accounting codes usually < 15 digits.
+        // Using BigInt just in case or string manipulation.
+        // Assuming code is numeric string.
+        newCode = (Number(lastChild.account_code) + 1).toString();
+    } else {
+        newCode = parent.account_code + '01';
+    }
+
+    // 3. Insert
+    const { error } = await supabaseAdmin.from('accounts').insert({
+        name_ar: data.name_ar,
+        name_en: data.name_en,
+        account_code: newCode,
+        parent_id: data.parent_id,
+        account_type_id: parent.account_type_id,
+        level: parent.level + 1,
+        is_parent: false,
+        is_active: data.is_active ?? true,
+        current_balance: 0, // Default 0
+        currency: parent.currency || 'LYD',
+        description: data.description
+    });
+
+    if (error) return { success: false, error: error.message };
+    return { success: true };
+}
+
+export async function deleteAccount(id: string) {
+    // 1. Check for children
+    const { count: childrenCount } = await supabaseAdmin
+        .from('accounts')
+        .select('*', { count: 'exact', head: true })
+        .eq('parent_id', id);
+
+    if (childrenCount && childrenCount > 0) {
+        return { success: false, error: 'لا يمكن حذف حساب رئيسي يحتوي على حسابات فرعية' };
+    }
+
+    // 2. Check for transactions (journal entry lines)
+    const { count: txCount } = await supabaseAdmin
+        .from('journal_entry_lines')
+        .select('*', { count: 'exact', head: true })
+        .eq('account_id', id);
+
+    if (txCount && txCount > 0) {
+        return { success: false, error: 'لا يمكن حذف حساب يحتوي على حركات مالية' };
+    }
+
+    // 3. Delete
+    const { error } = await supabaseAdmin.from('accounts').delete().eq('id', id);
+
+    if (error) return { success: false, error: error.message };
+    return { success: true };
 }

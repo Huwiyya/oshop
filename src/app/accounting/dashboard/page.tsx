@@ -2,6 +2,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import {
@@ -21,6 +22,7 @@ import { formatCurrency } from '@/lib/utils';
 import { motion } from 'framer-motion';
 
 export default function AccountingDashboard() {
+    const router = useRouter(); // Initialize router
     const [isLoading, setIsLoading] = useState(true);
     const [metrics, setMetrics] = useState<DashboardSummary | null>(null);
     const [details, setDetails] = useState<{
@@ -110,6 +112,7 @@ export default function AccountingDashboard() {
                     trend={metrics?.netIncome && metrics.netIncome >= 0 ? 'positive' : 'negative'}
                     description="الفرق بين الإيرادات والمصروفات"
                     color="emerald"
+                    href="/accounting/financial-reports"
                 />
                 <MetricCard
                     title="إجمالي الأصول"
@@ -117,6 +120,7 @@ export default function AccountingDashboard() {
                     icon={Wallet}
                     description="مجموع النقدية، المخزون، والذمم"
                     color="blue"
+                    href="/accounting/financial-reports"
                 />
                 <MetricCard
                     title="إجمالي الالتزامات"
@@ -124,6 +128,7 @@ export default function AccountingDashboard() {
                     icon={CreditCard}
                     description="الديون والمستحقات"
                     color="amber"
+                    href="/accounting/financial-reports"
                 />
                 <MetricCard
                     title="حقوق الملكية"
@@ -131,6 +136,7 @@ export default function AccountingDashboard() {
                     icon={DollarSign}
                     description="رأس العمال والأرباح المحتجزة"
                     color="purple"
+                    href="/accounting/financial-reports"
                 />
             </div>
 
@@ -146,8 +152,8 @@ export default function AccountingDashboard() {
                                 قائمة الدخل (الأرباح والخسائر)
                             </CardTitle>
                             <span className={`px-3 py-1 rounded-full text-sm font-bold ${(metrics?.netIncome || 0) >= 0
-                                    ? 'bg-emerald-100 text-emerald-700'
-                                    : 'bg-red-100 text-red-700'
+                                ? 'bg-emerald-100 text-emerald-700'
+                                : 'bg-red-100 text-red-700'
                                 }`}>
                                 الصافي: {formatCurrency(metrics?.netIncome || 0)}
                             </span>
@@ -160,7 +166,7 @@ export default function AccountingDashboard() {
                                 <h3 className="font-semibold text-emerald-800 mb-3">الإيرادات</h3>
                                 <div className="space-y-2">
                                     {details?.revenue.map(acc => (
-                                        <AccountRow key={acc.id} account={acc} />
+                                        <AccountRow key={acc.id} account={acc} router={router} />
                                     ))}
                                     <div className="flex justify-between font-bold pt-2 border-t border-emerald-100 mt-2">
                                         <span>إجمالي الإيرادات</span>
@@ -174,7 +180,7 @@ export default function AccountingDashboard() {
                                 <h3 className="font-semibold text-red-800 mb-3">المصروفات</h3>
                                 <div className="space-y-2">
                                     {details?.expenses.map(acc => (
-                                        <AccountRow key={acc.id} account={acc} type="expense" />
+                                        <AccountRow key={acc.id} account={acc} router={router} type="expense" />
                                     ))}
                                     <div className="flex justify-between font-bold pt-2 border-t border-red-100 mt-2">
                                         <span>إجمالي المصروفات</span>
@@ -201,54 +207,67 @@ export default function AccountingDashboard() {
                         <div className="divide-y">
                             {/* Assets */}
                             <div className="p-4">
-                                <h3 className="font-semibold text-blue-800 mb-3">الأصول</h3>
+                                <Link href="/accounting/financial-reports?tab=balance-sheet">
+                                    <h3 className="font-semibold text-blue-800 mb-3 hover:underline cursor-pointer">الأصول</h3>
+                                </Link>
                                 <div className="space-y-2">
                                     {details?.assets.map(acc => (
-                                        <AccountRow key={acc.id} account={acc} />
+                                        <AccountRow key={acc.id} account={acc} router={router} />
                                     ))}
-                                    <div className="flex justify-between font-bold pt-2 border-t mt-2">
-                                        <span>إجمالي الأصول</span>
-                                        <span>{formatCurrency(metrics?.totalAssets || 0)}</span>
-                                    </div>
+                                    <Link href="/accounting/financial-reports?tab=balance-sheet">
+                                        <div className="flex justify-between font-bold pt-2 border-t mt-2 hover:bg-slate-50 cursor-pointer rounded px-1 transition-colors">
+                                            <span>إجمالي الأصول</span>
+                                            <span>{formatCurrency(metrics?.totalAssets || 0)}</span>
+                                        </div>
+                                    </Link>
                                 </div>
                             </div>
 
                             {/* Liabilities */}
                             <div className="p-4 bg-slate-50/50">
-                                <h3 className="font-semibold text-amber-800 mb-3">الالتزامات</h3>
+                                <Link href="/accounting/financial-reports?tab=balance-sheet">
+                                    <h3 className="font-semibold text-amber-800 mb-3 hover:underline cursor-pointer">الالتزامات</h3>
+                                </Link>
                                 <div className="space-y-2">
                                     {details?.liabilities.map(acc => (
-                                        <AccountRow key={acc.id} account={acc} />
+                                        <AccountRow key={acc.id} account={acc} router={router} />
                                     ))}
-                                    <div className="flex justify-between font-bold pt-2 border-t mt-2">
-                                        <span>إجمالي الالتزامات</span>
-                                        <span>{formatCurrency(metrics?.totalLiabilities || 0)}</span>
-                                    </div>
+                                    <Link href="/accounting/financial-reports?tab=balance-sheet">
+                                        <div className="flex justify-between font-bold pt-2 border-t mt-2 hover:bg-slate-100 cursor-pointer rounded px-1 transition-colors">
+                                            <span>إجمالي الالتزامات</span>
+                                            <span>{formatCurrency(metrics?.totalLiabilities || 0)}</span>
+                                        </div>
+                                    </Link>
                                 </div>
                             </div>
 
                             {/* Equity */}
                             <div className="p-4 bg-slate-50/50">
-                                <h3 className="font-semibold text-purple-800 mb-3">حقوق الملكية</h3>
+                                <Link href="/accounting/financial-reports?tab=balance-sheet">
+                                    <h3 className="font-semibold text-purple-800 mb-3 hover:underline cursor-pointer">حقوق الملكية</h3>
+                                </Link>
                                 <div className="space-y-2">
                                     {details?.equity.map(acc => (
-                                        <AccountRow key={acc.id} account={acc} />
+                                        <AccountRow key={acc.id} account={acc} router={router} />
                                     ))}
-                                    <div className="flex justify-between font-bold pt-2 border-t mt-2">
-                                        <span>إجمالي حقوق الملكية</span>
-                                        <span>{formatCurrency(metrics?.totalEquity || 0)}</span>
-                                    </div>
+                                    <Link href="/accounting/financial-reports?tab=balance-sheet">
+                                        <div className="flex justify-between font-bold pt-2 border-t mt-2 hover:bg-slate-100 cursor-pointer rounded px-1 transition-colors">
+                                            <span>إجمالي حقوق الملكية</span>
+                                            <span>{formatCurrency(metrics?.totalEquity || 0)}</span>
+                                        </div>
+                                    </Link>
                                 </div>
                             </div>
                         </div>
                     </CardContent>
                 </Card>
-            </div>
-        </div>
+            </div >
+        </div >
     );
 }
 
-function MetricCard({ title, value, icon: Icon, trend, description, color }: any) {
+import Link from 'next/link';
+function MetricCard({ title, value, icon: Icon, trend, description, color, href }: any) {
     const colorClasses = {
         emerald: "bg-emerald-50 text-emerald-600 border-emerald-100",
         blue: "bg-blue-50 text-blue-600 border-blue-100",
@@ -257,8 +276,8 @@ function MetricCard({ title, value, icon: Icon, trend, description, color }: any
         red: "bg-red-50 text-red-600 border-red-100",
     };
 
-    return (
-        <Card className="border shadow-sm hover:shadow-md transition-shadow">
+    const Content = (
+        <Card className={`border shadow-sm hover:shadow-md transition-shadow ${href ? 'cursor-pointer' : ''}`}>
             <CardContent className="p-6">
                 <div className="flex items-center justify-between mb-4">
                     <div className={`p-3 rounded-xl ${colorClasses[color as keyof typeof colorClasses]}`}>
@@ -280,16 +299,27 @@ function MetricCard({ title, value, icon: Icon, trend, description, color }: any
             </CardContent>
         </Card>
     );
+
+    if (href) return <Link href={href}>{Content}</Link>;
+    return Content;
 }
 
-function AccountRow({ account, type = 'normal' }: { account: AccountSummary, type?: 'normal' | 'expense' }) {
+function AccountRow({ account, router, type = 'normal' }: { account: AccountSummary, router: any, type?: 'normal' | 'expense' }) {
     const isNegative = Number(account.current_balance) < 0;
 
+    const handleClick = () => {
+        // Universal drill-down to Ledger View for ANY account clicked
+        router.push(`/accounting/ledger/${account.id}`);
+    };
+
     return (
-        <div className="flex justify-between items-center text-sm py-1 hover:bg-slate-50 rounded px-2 transition-colors cursor-pointer group">
+        <div
+            onClick={handleClick}
+            className="flex justify-between items-center text-sm py-1 hover:bg-slate-100 rounded px-2 transition-colors cursor-pointer group"
+        >
             <div className="flex items-center gap-2">
                 <span className="text-slate-400 font-mono text-xs">{account.account_code}</span>
-                <span className="text-slate-700 font-medium group-hover:text-emerald-700 transition-colors">
+                <span className="text-slate-700 font-medium group-hover:text-blue-700 transition-colors">
                     {account.name_ar}
                 </span>
             </div>

@@ -1,4 +1,3 @@
-
 'use client';
 
 import { useState, useEffect } from 'react';
@@ -6,17 +5,30 @@ import { useRouter } from 'next/navigation';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Plus, Search, DollarSign } from 'lucide-react';
-import { getSalesInvoices } from '@/lib/sales-actions';
+import { Plus, Search, Trash2, Loader2 } from 'lucide-react';
+import { getSalesInvoices, deleteSalesInvoice } from '@/lib/sales-actions';
 import { formatCurrency } from '@/lib/utils';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
+import { useToast } from '@/components/ui/use-toast';
+import {
+    AlertDialog,
+    AlertDialogAction,
+    AlertDialogCancel,
+    AlertDialogContent,
+    AlertDialogDescription,
+    AlertDialogFooter,
+    AlertDialogHeader,
+    AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 export default function SalesInvoicesPage() {
     const [invoices, setInvoices] = useState<any[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [searchTerm, setSearchTerm] = useState('');
+    const [deletingId, setDeletingId] = useState<string | null>(null);
     const router = useRouter();
+    const { toast } = useToast();
 
     useEffect(() => {
         getSalesInvoices().then(data => {
@@ -24,6 +36,23 @@ export default function SalesInvoicesPage() {
             setIsLoading(false);
         });
     }, []);
+
+    const handleDelete = async () => {
+        if (!deletingId) return;
+        try {
+            const res = await deleteSalesInvoice(deletingId);
+            if (res.success) {
+                toast({ title: 'تم حذف الفاتورة بنجاح', description: 'تم التراجع عن جميع التأثيرات المالية والمخزنية.' });
+                setInvoices(invoices.filter(i => i.id !== deletingId));
+            } else {
+                toast({ title: 'خطأ', description: res.error, variant: 'destructive' });
+            }
+        } catch (error) {
+            toast({ title: 'خطأ', description: 'حدث خطأ أثناء الحذف', variant: 'destructive' });
+        } finally {
+            setDeletingId(null);
+        }
+    };
 
     const filteredInvoices = invoices.filter(inv =>
         inv.invoice_number.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -68,14 +97,15 @@ export default function SalesInvoicesPage() {
                                 <TableHead className="text-emerald-600">الربح</TableHead>
                                 <TableHead>المدفوع</TableHead>
                                 <TableHead>الحالة</TableHead>
+                                <TableHead></TableHead>
                             </TableRow>
                         </TableHeader>
                         <TableBody>
                             {isLoading ? (
-                                <TableRow><TableCell colSpan={9} className="text-center py-10">جاري التحميل...</TableCell></TableRow>
+                                <TableRow><TableCell colSpan={10} className="text-center py-10">جاري التحميل...</TableCell></TableRow>
                             ) : filteredInvoices.length === 0 ? (
                                 <TableRow>
-                                    <TableCell colSpan={9} className="text-center py-10 text-slate-500">
+                                    <TableCell colSpan={10} className="text-center py-10 text-slate-500">
                                         لا توجد فواتير بيع
                                     </TableCell>
                                 </TableRow>
@@ -97,6 +127,16 @@ export default function SalesInvoicesPage() {
                                                 {inv.payment_status === 'paid' ? 'مدفوعة' : inv.payment_status}
                                             </Badge>
                                         </TableCell>
+                                        <TableCell>
+                                            <Button
+                                                variant="ghost"
+                                                size="sm"
+                                                className="text-red-500 hover:text-red-700 h-8 w-8 p-0"
+                                                onClick={(e) => { e.stopPropagation(); setDeletingId(inv.id); }}
+                                            >
+                                                <Trash2 className="w-4 h-4" />
+                                            </Button>
+                                        </TableCell>
                                     </TableRow>
                                 ))
                             )}
@@ -104,6 +144,24 @@ export default function SalesInvoicesPage() {
                     </Table>
                 </CardContent>
             </Card>
+
+            <AlertDialog open={!!deletingId} onOpenChange={(open) => !open && setDeletingId(null)}>
+                <AlertDialogContent>
+                    <AlertDialogHeader>
+                        <AlertDialogTitle>حذف الفاتورة</AlertDialogTitle>
+                        <AlertDialogDescription>
+                            هل أنت متأكد من حذف هذه الفاتورة؟ سيتم إلغاء جميع الحركات المالية والمخزنية المرتبطة بها.
+                            لا يمكن التراجع عن هذا الإجراء.
+                        </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                        <AlertDialogCancel>إلغاء</AlertDialogCancel>
+                        <AlertDialogAction onClick={handleDelete} className="bg-red-600 hover:bg-red-700">
+                            حذف نهائي
+                        </AlertDialogAction>
+                    </AlertDialogFooter>
+                </AlertDialogContent>
+            </AlertDialog>
         </div>
     );
 }

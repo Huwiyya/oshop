@@ -5,6 +5,8 @@ import { useRouter } from 'next/navigation';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Checkbox } from '@/components/ui/checkbox';
 import {
     Table,
     TableBody,
@@ -13,6 +15,23 @@ import {
     TableHeader,
     TableRow,
 } from '@/components/ui/table';
+import {
+    Dialog,
+    DialogContent,
+    DialogHeader,
+    DialogTitle,
+    DialogFooter,
+} from '@/components/ui/dialog';
+import {
+    AlertDialog,
+    AlertDialogAction,
+    AlertDialogCancel,
+    AlertDialogContent,
+    AlertDialogDescription,
+    AlertDialogFooter,
+    AlertDialogHeader,
+    AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import {
     BookOpen,
     Plus,
@@ -25,146 +44,55 @@ import {
     Trash2,
     Eye,
     Calculator,
-    ArrowLeft
+    ArrowLeft,
+    Loader2,
+    EyeOff
 } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { Badge } from '@/components/ui/badge';
-
-// Mock data - سيتم استبدالها بالبيانات الفعلية من قاعدة البيانات
-const mockAccounts = [
-    {
-        id: '1',
-        code: '1000',
-        name: 'الأصول',
-        type: 'الأصول',
-        level: 1,
-        balance: 150000,
-        isParent: true,
-        children: [
-            {
-                id: '2',
-                code: '1100',
-                name: 'الأصول المتداولة',
-                type: 'الأصول',
-                level: 2,
-                balance: 100000,
-                isParent: true,
-                children: [
-                    {
-                        id: '3',
-                        code: '1110',
-                        name: 'النقدية والبنوك',
-                        type: 'الأصول',
-                        level: 3,
-                        balance: 50000,
-                        isParent: true,
-                        children: [
-                            { id: '4', code: '1111', name: 'كاش ليبي', type: 'الأصول', level: 4, balance: 25000, isParent: false },
-                            { id: '5', code: '1112', name: 'مصرف الجمهورية', type: 'الأصول', level: 4, balance: 15000, isParent: false },
-                            { id: '6', code: '1113', name: 'دولار كاش', type: 'الأصول', level: 4, balance: 10000, isParent: false },
-                        ]
-                    },
-                    {
-                        id: '7',
-                        code: '1120',
-                        name: 'الذمم المدينة',
-                        type: 'الأصول',
-                        level: 3,
-                        balance: 30000,
-                        isParent: false,
-                    },
-                    {
-                        id: '8',
-                        code: '1130',
-                        name: 'المخزون',
-                        type: 'الأصول',
-                        level: 3,
-                        balance: 20000,
-                        isParent: false,
-                    },
-                ]
-            },
-        ]
-    },
-    {
-        id: '9',
-        code: '2000',
-        name: 'الالتزامات',
-        type: 'الالتزامات',
-        level: 1,
-        balance: 50000,
-        isParent: true,
-        children: [
-            {
-                id: '10',
-                code: '2100',
-                name: 'الالتزامات المتداولة',
-                type: 'الالتزامات',
-                level: 2,
-                balance: 50000,
-                isParent: true,
-                children: [
-                    { id: '11', code: '2110', name: 'الذمم الدائنة', type: 'الالتزامات', level: 3, balance: 30000, isParent: false },
-                    { id: '12', code: '2120', name: 'رواتب مستحقة', type: 'الالتزامات', level: 3, balance: 20000, isParent: false },
-                ]
-            },
-        ]
-    },
-    {
-        id: '13',
-        code: '4000',
-        name: 'الإيرادات',
-        type: 'الإيرادات',
-        level: 1,
-        balance: 200000,
-        isParent: true,
-        children: [
-            { id: '14', code: '4100', name: 'إيرادات المبيعات', type: 'الإيرادات', level: 2, balance: 200000, isParent: false },
-        ]
-    },
-    {
-        id: '15',
-        code: '5000',
-        name: 'المصروفات',
-        type: 'المصروفات',
-        level: 1,
-        balance: 80000,
-        isParent: true,
-        children: [
-            { id: '16', code: '5100', name: 'تكلفة البضاعة المباعة', type: 'المصروفات', level: 2, balance: 50000, isParent: false },
-            { id: '17', code: '5200', name: 'مصروف الرواتب', type: 'المصروفات', level: 2, balance: 20000, isParent: false },
-            { id: '18', code: '5300', name: 'مصروفات عمومية', type: 'المصروفات', level: 2, balance: 10000, isParent: false },
-        ]
-    },
-];
+import { getAllAccounts, updateAccount, deleteAccount, toggleAccountStatus, createAccount } from '@/lib/accounting-actions';
+import { useToast } from '@/components/ui/use-toast';
+import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from "@/components/ui/select"
 
 interface AccountTreeProps {
     account: any;
     expanded: { [key: string]: boolean };
     onToggle: (id: string) => void;
+    onEdit: (account: any) => void;
+    onDelete: (account: any) => void;
+    onToggleStatus: (id: string, currentStatus: boolean) => void;
+    level?: number;
 }
 
-const AccountRow = ({ account, expanded, onToggle }: AccountTreeProps) => {
-    const paddingRight = `${(account.level - 1) * 2}rem`;
+const AccountRow = ({ account, expanded, onToggle, onEdit, onDelete, onToggleStatus, level = 1 }: AccountTreeProps) => {
+    const paddingRight = `${(level - 1) * 2}rem`;
     const isExpanded = expanded[account.id];
+    const isInactive = account.is_active === false;
+
+    // Determine type name strictly from account_type relation or fallback (handling mock data transition)
+    const typeName = account.account_type?.name_ar || account.type || 'غير محدد';
 
     const getCategoryColor = (type: string) => {
-        switch (type) {
-            case 'الأصول': return 'bg-blue-100 text-blue-700 border-blue-200';
-            case 'الالتزامات': return 'bg-red-100 text-red-700 border-red-200';
-            case 'حقوق الملكية': return 'bg-purple-100 text-purple-700 border-purple-200';
-            case 'الإيرادات': return 'bg-green-100 text-green-700 border-green-200';
-            case 'المصروفات': return 'bg-orange-100 text-orange-700 border-orange-200';
-            default: return 'bg-gray-100 text-gray-700 border-gray-200';
-        }
+        if (type.includes('أصول') || type === 'Assets') return 'bg-blue-100 text-blue-700 border-blue-200';
+        if (type.includes('التزامات') || type === 'Liabilities') return 'bg-red-100 text-red-700 border-red-200';
+        if (type.includes('حقوق') || type === 'Equity') return 'bg-purple-100 text-purple-700 border-purple-200';
+        if (type.includes('إيراد') || type === 'Revenue') return 'bg-green-100 text-green-700 border-green-200';
+        if (type.includes('مصروف') || type === 'Expenses') return 'bg-orange-100 text-orange-700 border-orange-200';
+        return 'bg-gray-100 text-gray-700 border-gray-200';
     };
 
     return (
         <>
-            <TableRow className="hover:bg-slate-50 transition-colors">
+            <TableRow className={`hover:bg-slate-50 transition-colors group ${isInactive ? 'bg-slate-50 opacity-60 grayscale' : ''}`}>
                 <TableCell style={{ paddingRight }}>
                     <div className="flex items-center gap-2">
-                        {account.isParent && (
+                        {account.children && account.children.length > 0 && (
                             <button
                                 onClick={() => onToggle(account.id)}
                                 className="hover:bg-slate-200 rounded p-1 transition-colors"
@@ -176,44 +104,62 @@ const AccountRow = ({ account, expanded, onToggle }: AccountTreeProps) => {
                                 )}
                             </button>
                         )}
-                        {!account.isParent && <div className="w-6" />}
-                        <span className={`font-${account.level === 1 ? 'bold' : account.level === 2 ? 'semibold' : 'medium'}`}>
-                            {account.name}
+                        {(!account.children || account.children.length === 0) && <div className="w-6" />}
+                        <span className={`font-${level === 1 ? 'bold' : level === 2 ? 'semibold' : 'medium'} ${isInactive ? 'line-through decoration-slate-400' : ''}`}>
+                            {account.name_ar}
                         </span>
-                        {account.isParent && (
+                        {account.is_parent && (
                             <Badge variant="outline" className="text-xs">
                                 رئيسي
                             </Badge>
                         )}
+                        {isInactive && (
+                            <Badge variant="secondary" className="text-xs bg-slate-200 text-slate-600">
+                                غير نشط
+                            </Badge>
+                        )}
                     </div>
                 </TableCell>
-                <TableCell className="font-mono font-semibold">{account.code}</TableCell>
+                <TableCell className="font-mono font-semibold">{account.account_code}</TableCell>
                 <TableCell>
-                    <Badge className={getCategoryColor(account.type)} variant="outline">
-                        {account.type}
+                    <Badge className={getCategoryColor(typeName)} variant="outline">
+                        {typeName}
                     </Badge>
                 </TableCell>
                 <TableCell className="text-left font-semibold">
-                    {account.balance.toLocaleString()} د.ل
+                    {Number(account.current_balance || 0).toLocaleString()} د.ل
                 </TableCell>
                 <TableCell>
-                    <div className="flex gap-1">
-                        <Button size="sm" variant="ghost" className="h-8 w-8 p-0">
-                            <Eye className="h-4 w-4" />
+                    <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <Button
+                            size="sm" variant="ghost" className="h-8 w-8 p-0 text-slate-500 hover:text-slate-800"
+                            onClick={() => onToggleStatus(account.id, account.is_active !== false)}
+                            title={isInactive ? "تنشيط الحساب" : "إيقاف الحساب"}
+                        >
+                            {isInactive ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                         </Button>
-                        <Button size="sm" variant="ghost" className="h-8 w-8 p-0">
-                            <Edit className="h-4 w-4" />
+                        <Button size="sm" variant="ghost" className="h-8 w-8 p-0" onClick={() => onEdit(account)}>
+                            <Edit className="h-4 w-4 text-blue-600" />
                         </Button>
-                        {!account.isParent && (
-                            <Button size="sm" variant="ghost" className="h-8 w-8 p-0 text-red-600 hover:text-red-700">
+                        {!account.is_parent && (
+                            <Button size="sm" variant="ghost" className="h-8 w-8 p-0 text-red-600 hover:text-red-700" onClick={() => onDelete(account)}>
                                 <Trash2 className="h-4 w-4" />
                             </Button>
                         )}
                     </div>
                 </TableCell>
             </TableRow>
-            {account.isParent && isExpanded && account.children?.map((child: any) => (
-                <AccountRow key={child.id} account={child} expanded={expanded} onToggle={onToggle} />
+            {isExpanded && account.children?.map((child: any) => (
+                <AccountRow
+                    key={child.id}
+                    account={child}
+                    expanded={expanded}
+                    onToggle={onToggle}
+                    onEdit={onEdit}
+                    onDelete={onDelete}
+                    onToggleStatus={onToggleStatus}
+                    level={level + 1}
+                />
             ))}
         </>
     );
@@ -221,42 +167,236 @@ const AccountRow = ({ account, expanded, onToggle }: AccountTreeProps) => {
 
 export default function ChartOfAccountsPage() {
     const router = useRouter();
+    const { toast } = useToast();
+    const [accounts, setAccounts] = useState<any[]>([]);
+    const [flatAccounts, setFlatAccounts] = useState<any[]>([]);
+    const [loading, setLoading] = useState(true);
     const [searchQuery, setSearchQuery] = useState('');
     const [expanded, setExpanded] = useState<{ [key: string]: boolean }>({});
+    const [showInactive, setShowInactive] = useState(false);
+
+    // Edit State
+    const [editDialogOpen, setEditDialogOpen] = useState(false);
+    const [editingAccount, setEditingAccount] = useState<any>(null);
+    const [editForm, setEditForm] = useState({ name_ar: '', name_en: '', description: '' });
+    const [saving, setSaving] = useState(false);
+
+    // Create State
+    const [createDialogOpen, setCreateDialogOpen] = useState(false);
+    const [newAccountForm, setNewAccountForm] = useState({ name_ar: '', name_en: '', description: '', parent_id: '', is_active: true });
+
+    // Delete State
+    const [deleteAlertOpen, setDeleteAlertOpen] = useState(false);
+    const [deletingAccount, setDeletingAccount] = useState<any>(null);
+
+    const fetchAccounts = async () => {
+        setLoading(true);
+        try {
+            const data = await getAllAccounts();
+            if (data) {
+                setFlatAccounts(data);
+
+                // Build Tree
+                const accountMap: any = {};
+                const tree: any[] = [];
+
+                data.forEach((acc: any) => {
+                    accountMap[acc.id] = { ...acc, children: [] };
+                });
+
+                data.forEach((acc: any) => {
+                    if (acc.parent_id && accountMap[acc.parent_id]) {
+                        accountMap[acc.parent_id].children.push(accountMap[acc.id]);
+                    } else if (!acc.parent_id) { // Root nodes
+                        tree.push(accountMap[acc.id]);
+                    }
+                });
+
+                setAccounts(tree);
+
+                // Expand first level by default
+                const firstLevel: { [key: string]: boolean } = {};
+                tree.forEach(acc => firstLevel[acc.id] = true);
+                setExpanded(firstLevel);
+            }
+        } catch (error) {
+            console.error(error);
+            toast({ title: 'خطأ', description: 'فشل تحميل الحسابات', variant: 'destructive' });
+        } finally {
+            setLoading(false);
+        }
+    };
 
     useEffect(() => {
-        // Expand first level by default
-        const firstLevel: { [key: string]: boolean } = {};
-        mockAccounts.forEach(acc => {
-            firstLevel[acc.id] = true;
-        });
-        setExpanded(firstLevel);
+        fetchAccounts();
     }, []);
 
     const toggleExpand = (id: string) => {
-        setExpanded(prev => ({
-            ...prev,
-            [id]: !prev[id]
-        }));
+        setExpanded(prev => ({ ...prev, [id]: !prev[id] }));
     };
 
     const expandAll = () => {
         const allExpanded: { [key: string]: boolean } = {};
-        const expandRecursive = (accounts: any[]) => {
-            accounts.forEach(acc => {
-                if (acc.isParent) {
-                    allExpanded[acc.id] = true;
-                    if (acc.children) expandRecursive(acc.children);
-                }
+        const expandRecursive = (nodes: any[]) => {
+            nodes.forEach(node => {
+                allExpanded[node.id] = true;
+                if (node.children) expandRecursive(node.children);
             });
         };
-        expandRecursive(mockAccounts);
+        expandRecursive(accounts);
         setExpanded(allExpanded);
     };
 
-    const collapseAll = () => {
-        setExpanded({});
+    const collapseAll = () => setExpanded({});
+
+    // --- Actions ---
+
+    const handleCreateClick = () => {
+        setNewAccountForm({
+            name_ar: '',
+            name_en: '',
+            description: '',
+            parent_id: '',
+            is_active: true
+        });
+        setCreateDialogOpen(true);
     };
+
+    const handleConfirmCreate = async () => {
+        if (!newAccountForm.name_ar || !newAccountForm.parent_id) {
+            toast({ title: 'خطأ', description: 'يرجى ملء الحقول الإلزامية (الاسم والحساب الرئيسي)', variant: 'destructive' });
+            return;
+        }
+        setSaving(true);
+        try {
+            const res = await createAccount(newAccountForm);
+            if (res.success) {
+                toast({ title: 'تم الحفظ', description: 'تم إنشاء الحساب بنجاح' });
+                setCreateDialogOpen(false);
+                fetchAccounts();
+            } else {
+                toast({ title: 'خطأ', description: res.error, variant: 'destructive' });
+            }
+        } catch (error) {
+            console.error(error);
+            toast({ title: 'خطأ', description: 'حدث خطأ غير متوقع', variant: 'destructive' });
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    const handleToggleActiveStatus = async (id: string, newStatus: boolean) => {
+        // Optimistic update could be done here, but full fetch is safer for tree
+        setSaving(true);
+        try {
+            const res = await toggleAccountStatus(id, newStatus);
+            if (res.success) {
+                toast({ title: newStatus ? 'تم تنشيط الحساب' : 'تم إيقاف الحساب' });
+                fetchAccounts();
+            } else {
+                toast({ title: 'خطأ', description: res.error, variant: 'destructive' });
+            }
+        } catch (error) {
+            console.error(error);
+            toast({ title: 'خطأ', description: 'حدث خطأ غير متوقع', variant: 'destructive' });
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    const handleEditClick = (account: any) => {
+        setEditingAccount(account);
+        setEditForm({
+            name_ar: account.name_ar,
+            name_en: account.name_en || '',
+            description: account.description || ''
+        });
+        setEditDialogOpen(true);
+    };
+
+    const handleSaveEdit = async () => {
+        if (!editingAccount) return;
+        setSaving(true);
+        try {
+            const res = await updateAccount(editingAccount.id, editForm);
+            if (res.success) {
+                toast({ title: 'تم التحديث بنجاح' });
+                setEditDialogOpen(false);
+                fetchAccounts();
+            } else {
+                toast({ title: 'خطأ', description: res.error, variant: 'destructive' });
+            }
+        } catch (error) {
+            toast({ title: 'خطأ', description: 'حدث خطأ غير متوقع', variant: 'destructive' });
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    const handleDeleteClick = (account: any) => {
+        // Double check children locally before server check
+        if (account.children && account.children.length > 0) {
+            toast({ title: 'تنبيه', description: 'لا يمكن حذف حساب رئيسي يحتوي على حسابات فرعية', variant: 'destructive' });
+            return;
+        }
+        setDeletingAccount(account);
+        setDeleteAlertOpen(true);
+    };
+
+    const handleConfirmDelete = async () => {
+        if (!deletingAccount) return;
+        setSaving(true);
+        try {
+            const res = await deleteAccount(deletingAccount.id);
+            if (res.success) {
+                toast({ title: 'تم الحذف بنجاح' });
+                setDeleteAlertOpen(false);
+                fetchAccounts();
+            } else {
+                toast({ title: 'خطأ', description: res.error, variant: 'destructive' });
+            }
+        } catch (error) {
+            toast({ title: 'خطأ', description: 'حدث خطأ غير متوقع', variant: 'destructive' });
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    // --- Search Filter Logic ---
+    // A simplified recursive filter for the tree
+    const filterNodes = (nodes: any[]): any[] => {
+        // If query is empty and showInactive is true, show all.
+        // If query is empty and showInactive is false, filter by active logic.
+
+        return nodes.reduce((filtered: any[], node) => {
+            // 1. Filter by Active/Inactive
+            if (!showInactive && node.is_active === false) {
+                return filtered;
+            }
+
+            // 2. Filter by Search Query
+            // Note: If a child matches, we must show parent even if parent doesn't match query
+            // BUT parent must respect showInactive unless it has matching children?
+
+            const isMatch = !searchQuery ||
+                node.name_ar.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                node.account_code.includes(searchQuery);
+
+            const filteredChildren = node.children ? filterNodes(node.children) : [];
+
+            if (isMatch || filteredChildren.length > 0) {
+                filtered.push({ ...node, children: filteredChildren });
+                if (searchQuery && !expanded[node.id]) {
+                    // Auto expand on search
+                    // Careful with direct mutation in render, but usually ok for shallow expand obj
+                    // Better to handle in useEffect but keeping simple
+                }
+            }
+            return filtered;
+        }, []);
+    };
+
+    const displayedAccounts = filterNodes(accounts);
 
     return (
         <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-slate-100" dir="rtl">
@@ -279,12 +419,12 @@ export default function ChartOfAccountsPage() {
                                     <BookOpen className="h-8 w-8 text-blue-600" />
                                     دليل الحسابات
                                 </h1>
-                                <p className="text-slate-600 mt-1">إدارة شجرة الحسابات المالية</p>
+                                <p className="text-slate-600 mt-1">إدارة شجرة الحسابات المالية (إصدار كامل)</p>
                             </div>
                         </div>
                         <div className="flex gap-2">
                             <Button
-                                onClick={() => alert('قريباً: إضافة حساب جديد')}
+                                onClick={handleCreateClick}
                                 className="bg-blue-600 hover:bg-blue-700 text-white gap-2"
                             >
                                 <Plus className="h-4 w-4" />
@@ -297,35 +437,6 @@ export default function ChartOfAccountsPage() {
 
             {/* Main Content */}
             <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-                {/* Statistics */}
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-                    {[
-                        { label: 'الأصول', value: '150,000 د.ل', color: 'bg-blue-500' },
-                        { label: 'الالتزامات', value: '50,000 د.ل', color: 'bg-red-500' },
-                        { label: 'الإيرادات', value: '200,000 د.ل', color: 'bg-green-500' },
-                        { label: 'المصروفات', value: '80,000 د.ل', color: 'bg-orange-500' },
-                    ].map((stat, i) => (
-                        <motion.div
-                            key={i}
-                            initial={{ opacity: 0, y: 20 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            transition={{ delay: i * 0.1 }}
-                        >
-                            <Card>
-                                <CardContent className="p-6">
-                                    <div className="flex items-center gap-4">
-                                        <div className={`w-3 h-12 rounded ${stat.color}`} />
-                                        <div>
-                                            <p className="text-sm text-slate-600">{stat.label}</p>
-                                            <p className="text-2xl font-bold">{stat.value}</p>
-                                        </div>
-                                    </div>
-                                </CardContent>
-                            </Card>
-                        </motion.div>
-                    ))}
-                </div>
-
                 {/* Search and Filters */}
                 <Card className="mb-6">
                     <CardContent className="p-6">
@@ -341,20 +452,18 @@ export default function ChartOfAccountsPage() {
                                     />
                                 </div>
                             </div>
-                            <Button variant="outline" className="gap-2">
-                                <Filter className="h-4 w-4" />
-                                تصفية
-                            </Button>
-                            <Button variant="outline" className="gap-2" onClick={expandAll}>
-                                توسيع الكل
-                            </Button>
-                            <Button variant="outline" className="gap-2" onClick={collapseAll}>
-                                طي الكل
-                            </Button>
-                            <Button variant="outline" className="gap-2">
-                                <Download className="h-4 w-4" />
-                                تصدير
-                            </Button>
+                            <div className="flex items-center space-x-2 rtl:space-x-reverse bg-slate-50 px-3 py-2 rounded border">
+                                <Checkbox
+                                    id="show-inactive"
+                                    checked={showInactive}
+                                    onCheckedChange={(checked) => setShowInactive(checked as boolean)}
+                                />
+                                <Label htmlFor="show-inactive" className="text-sm cursor-pointer select-none">
+                                    عرض الحسابات غير النشطة
+                                </Label>
+                            </div>
+                            <Button variant="outline" className="gap-2" onClick={expandAll}>توسيع الكل</Button>
+                            <Button variant="outline" className="gap-2" onClick={collapseAll}>طي الكل</Button>
                         </div>
                     </CardContent>
                 </Card>
@@ -367,45 +476,185 @@ export default function ChartOfAccountsPage() {
                             شجرة الحسابات
                         </CardTitle>
                         <CardDescription>
-                            تتبع عرض هرمي وتفصيلي لجميع حسابات المنشأة
+                            يمكنك الآن تعديل وحذف الحسابات (مع مراعاة القيود المحاسبية)
                         </CardDescription>
                     </CardHeader>
                     <CardContent>
-                        <div className="rounded-md border">
-                            <Table>
-                                <TableHeader>
-                                    <TableRow className="bg-slate-50">
-                                        <TableHead className="font-bold">اسم الحساب</TableHead>
-                                        <TableHead className="font-bold">رقم الحساب</TableHead>
-                                        <TableHead className="font-bold">النوع</TableHead>
-                                        <TableHead className="font-bold text-left">الرصيد</TableHead>
-                                        <TableHead className="font-bold">إجراءات</TableHead>
-                                    </TableRow>
-                                </TableHeader>
-                                <TableBody>
-                                    {mockAccounts.map((account) => (
-                                        <AccountRow
-                                            key={account.id}
-                                            account={account}
-                                            expanded={expanded}
-                                            onToggle={toggleExpand}
-                                        />
-                                    ))}
-                                </TableBody>
-                            </Table>
-                        </div>
-                    </CardContent>
-                </Card>
-
-                {/* Info Note */}
-                <Card className="mt-6 border-blue-200 bg-blue-50">
-                    <CardContent className="p-4">
-                        <p className="text-sm text-blue-900">
-                            💡 <strong>ملاحظة:</strong> هذه بيانات تجريبية. سيتم ربطها بقاعدة البيانات قريباً لعرض الحسابات الفعلية.
-                        </p>
+                        {loading ? (
+                            <div className="flex justify-center py-10">
+                                <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
+                            </div>
+                        ) : (
+                            <div className="rounded-md border">
+                                <Table>
+                                    <TableHeader>
+                                        <TableRow className="bg-slate-50">
+                                            <TableHead className="font-bold w-[400px]">اسم الحساب</TableHead>
+                                            <TableHead className="font-bold">رقم الحساب</TableHead>
+                                            <TableHead className="font-bold">النوع</TableHead>
+                                            <TableHead className="font-bold text-left">الرصيد المحاسبي</TableHead>
+                                            <TableHead className="font-bold w-[100px]">إجراءات</TableHead>
+                                        </TableRow>
+                                    </TableHeader>
+                                    <TableBody>
+                                        {displayedAccounts.length === 0 ? (
+                                            <TableRow>
+                                                <TableCell colSpan={5} className="text-center py-10 text-slate-500">
+                                                    لا توجد حسابات مطابقة للبحث
+                                                </TableCell>
+                                            </TableRow>
+                                        ) : (
+                                            displayedAccounts.map((account) => (
+                                                <AccountRow
+                                                    key={account.id}
+                                                    account={account}
+                                                    expanded={expanded}
+                                                    onToggle={toggleExpand}
+                                                    onEdit={handleEditClick}
+                                                    onDelete={handleDeleteClick}
+                                                    onToggleStatus={handleToggleActiveStatus}
+                                                />
+                                            ))
+                                        )}
+                                    </TableBody>
+                                </Table>
+                            </div>
+                        )}
                     </CardContent>
                 </Card>
             </div>
+
+            {/* Create Dialog */}
+            <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
+                <DialogContent>
+                    <DialogHeader>
+                        <DialogTitle>إضافة حساب جديد</DialogTitle>
+                    </DialogHeader>
+                    <div className="space-y-4 py-4">
+                        <div className="space-y-2">
+                            <Label>الحساب الرئيسي (الأب)</Label>
+                            <Select
+                                value={newAccountForm.parent_id}
+                                onValueChange={(val) => setNewAccountForm({ ...newAccountForm, parent_id: val })}
+                            >
+                                <SelectTrigger>
+                                    <SelectValue placeholder="اختر الحساب الرئيسي..." />
+                                </SelectTrigger>
+                                <SelectContent className="max-h-[300px]">
+                                    {flatAccounts.map((acc) => (
+                                        <SelectItem key={acc.id} value={acc.id}>
+                                            <span className="font-mono text-slate-500 ml-2">{acc.account_code}</span>
+                                            {acc.name_ar}
+                                        </SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
+                        </div>
+                        <div className="space-y-2">
+                            <Label>اسم الحساب (عربي)</Label>
+                            <Input
+                                value={newAccountForm.name_ar}
+                                onChange={e => setNewAccountForm({ ...newAccountForm, name_ar: e.target.value })}
+                                placeholder="مثلاً: مصروفات نثرية"
+                            />
+                        </div>
+                        <div className="space-y-2">
+                            <Label>اسم الحساب (إنجليزي) - اختياري</Label>
+                            <Input
+                                value={newAccountForm.name_en}
+                                onChange={e => setNewAccountForm({ ...newAccountForm, name_en: e.target.value })}
+                            />
+                        </div>
+                        <div className="space-y-2">
+                            <Label>الوصف</Label>
+                            <Input
+                                value={newAccountForm.description}
+                                onChange={e => setNewAccountForm({ ...newAccountForm, description: e.target.value })}
+                            />
+                        </div>
+                        <div className="flex items-center space-x-2 rtl:space-x-reverse pt-2">
+                            <Checkbox
+                                id="new-account-active"
+                                checked={newAccountForm.is_active}
+                                onCheckedChange={(checked) => setNewAccountForm({ ...newAccountForm, is_active: checked as boolean })}
+                            />
+                            <Label htmlFor="new-account-active" className="cursor-pointer">
+                                حساب نشط (يظهر في القوائم والملخصات)
+                            </Label>
+                        </div>
+                    </div>
+                    <DialogFooter>
+                        <Button variant="outline" onClick={() => setCreateDialogOpen(false)}>إلغاء</Button>
+                        <Button onClick={handleConfirmCreate} disabled={saving}>
+                            {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : 'إنشاء الحساب'}
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+
+            {/* Edit Dialog */}
+            <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
+                <DialogContent>
+                    <DialogHeader>
+                        <DialogTitle>تعديل حساب: {editingAccount?.name_ar}</DialogTitle>
+                    </DialogHeader>
+                    <div className="space-y-4 py-4">
+                        <div className="space-y-2">
+                            <Label>اسم الحساب (عربي)</Label>
+                            <Input
+                                value={editForm.name_ar}
+                                onChange={e => setEditForm({ ...editForm, name_ar: e.target.value })}
+                            />
+                        </div>
+                        <div className="space-y-2">
+                            <Label>اسم الحساب (إنجليزي)</Label>
+                            <Input
+                                value={editForm.name_en}
+                                onChange={e => setEditForm({ ...editForm, name_en: e.target.value })}
+                            />
+                        </div>
+                        <div className="space-y-2">
+                            <Label>الوصف</Label>
+                            <Input
+                                value={editForm.description}
+                                onChange={e => setEditForm({ ...editForm, description: e.target.value })}
+                            />
+                        </div>
+                    </div>
+                    <DialogFooter>
+                        <Button variant="outline" onClick={() => setEditDialogOpen(false)}>إلغاء</Button>
+                        <Button onClick={handleSaveEdit} disabled={saving}>
+                            {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : 'حفظ التغييرات'}
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+
+            {/* Delete Confirmation */}
+            <AlertDialog open={deleteAlertOpen} onOpenChange={setDeleteAlertOpen}>
+                <AlertDialogContent>
+                    <AlertDialogHeader>
+                        <AlertDialogTitle>هل أنت متأكد من حذف هذا الحساب؟</AlertDialogTitle>
+                        <AlertDialogDescription>
+                            سيتم حذف حساب "{deletingAccount?.name_ar}" نهائياً. لا يمكن التراجع عن هذا الإجراء.
+                            <br />
+                            <span className="text-red-500 text-xs font-bold mt-2 block">
+                                ملاحظة: لا يمكن حذف حساب إذا كان يحتوي على حركات مالية مسجلة.
+                            </span>
+                        </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                        <AlertDialogCancel>إلغاء</AlertDialogCancel>
+                        <AlertDialogAction
+                            onClick={(e) => { e.preventDefault(); handleConfirmDelete(); }}
+                            className="bg-red-600 hover:bg-red-700"
+                            disabled={saving}
+                        >
+                            {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : 'نعم، احذف الحساب'}
+                        </AlertDialogAction>
+                    </AlertDialogFooter>
+                </AlertDialogContent>
+            </AlertDialog>
         </div>
     );
 }

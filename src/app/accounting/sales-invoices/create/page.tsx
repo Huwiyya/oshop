@@ -150,7 +150,8 @@ export default function CreateSalesInvoice() {
                                     <Label>سعر الصرف</Label>
                                     <Input
                                         type="number" step="0.0001"
-                                        value={formData.exchangeRate}
+                                        placeholder="0.00"
+                                        value={formData.exchangeRate || ''}
                                         onChange={e => setFormData({ ...formData, exchangeRate: Number(e.target.value) })}
                                     />
                                 </div>
@@ -238,7 +239,8 @@ export default function CreateSalesInvoice() {
                                 <Label>المبلغ المستلم (المدفوع)</Label>
                                 <Input
                                     type="number"
-                                    value={formData.paidAmount}
+                                    placeholder="0.00"
+                                    value={formData.paidAmount || ''}
                                     onChange={e => setFormData({ ...formData, paidAmount: Number(e.target.value) })}
                                 />
                             </div>
@@ -273,8 +275,10 @@ export default function CreateSalesInvoice() {
 function AddItemDialog({ inventoryItems, onAdd, currency }: { inventoryItems: any[], onAdd: (item: SalesInvoiceItem) => void, currency: string }) {
     const [open, setOpen] = useState(false);
     const [selectedItemId, setSelectedItemId] = useState('');
-    const [quantity, setQuantity] = useState(1);
-    const [price, setPrice] = useState(0);
+
+    // Use string | number for better UX
+    const [quantity, setQuantity] = useState<string | number>(1);
+    const [price, setPrice] = useState<string | number>('');
 
     // For Cards
     const [availableCards, setAvailableCards] = useState<any[]>([]);
@@ -308,22 +312,26 @@ function AddItemDialog({ inventoryItems, onAdd, currency }: { inventoryItems: an
 
         if (selectedItem.is_shein_card && selectedCardIds.length === 0) {
             // Must select cards
-            // Could add validation here but button is disabled if q=0
         }
+
+        const finalQty = Number(quantity) || 0;
+        const finalPrice = Number(price) || 0;
+
+        if (finalQty <= 0) return;
 
         onAdd({
             itemId: selectedItemId,
             description: selectedItem.name_ar,
-            quantity: quantity,
-            unitPrice: price,
-            total: quantity * price, // Sales Total
+            quantity: finalQty,
+            unitPrice: finalPrice,
+            total: finalQty * finalPrice, // Sales Total
             selectedLayerIds: selectedItem.is_shein_card ? selectedCardIds : undefined
         });
         setOpen(false);
         // Reset
         setSelectedItemId('');
         setQuantity(1);
-        setPrice(0);
+        setPrice('');
         setSelectedCardIds([]);
     };
 
@@ -399,7 +407,7 @@ function AddItemDialog({ inventoryItems, onAdd, currency }: { inventoryItems: an
                                 type="number" min="1"
                                 max={selectedItem?.quantity_on_hand || 1000}
                                 value={quantity}
-                                onChange={e => setQuantity(Number(e.target.value))}
+                                onChange={e => setQuantity(e.target.value)}
                             />
                             {selectedItem && (
                                 <p className="text-xs text-slate-500">المتوفر: {selectedItem.quantity_on_hand}</p>
@@ -409,7 +417,14 @@ function AddItemDialog({ inventoryItems, onAdd, currency }: { inventoryItems: an
 
                     <div className="space-y-2">
                         <Label>سعر البيع ({currency})</Label>
-                        <Input type="number" min="0" step="0.01" value={price} onChange={e => setPrice(Number(e.target.value))} />
+                        <Input
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            placeholder="0.00"
+                            value={price}
+                            onChange={e => setPrice(e.target.value)}
+                        />
                     </div>
                 </div>
                 <DialogFooter>

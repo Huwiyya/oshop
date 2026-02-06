@@ -137,7 +137,7 @@ export default async function CashAndBankPage() {
 
                 <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
                     {cashAccounts.map((account) => (
-                        <Link key={account.id} href={`/admin/accounting/cash-accounts/${account.id}`}>
+                        <Link key={account.id} href={`/accounting/cash-bank/${account.id}`}>
                             <Card className="hover:border-emerald-500/50 transition-colors cursor-pointer group">
                                 <CardHeader className="pb-2">
                                     <CardTitle className="flex justify-between items-start text-lg">
@@ -180,7 +180,7 @@ export default async function CashAndBankPage() {
 
                 <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
                     {bankAccounts.map((account) => (
-                        <Link key={account.id} href={`/admin/accounting/bank-accounts/${account.id}`}>
+                        <Link key={account.id} href={`/accounting/cash-bank/${account.id}`}>
                             <Card className="hover:border-blue-500/50 transition-colors cursor-pointer group">
                                 <CardHeader className="pb-2">
                                     <CardTitle className="flex justify-between items-start text-lg">

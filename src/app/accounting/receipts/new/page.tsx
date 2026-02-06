@@ -10,7 +10,10 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { ArrowRight, User } from 'lucide-react';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
+import { ArrowRight, User, Check, ChevronsUpDown } from 'lucide-react';
+import { cn } from '@/lib/utils';
 import Link from 'next/link';
 
 export default function NewReceiptPage() {
@@ -27,6 +30,9 @@ export default function NewReceiptPage() {
     const [description, setDescription] = useState('');
     const [amount, setAmount] = useState('');
     const [currency, setCurrency] = useState<'LYD' | 'USD'>('LYD');
+    const [open, setOpen] = useState(false);
+
+    const selectedUser = users.find(u => u.id === relatedUserId);
 
     useEffect(() => {
         async function load() {
@@ -60,7 +66,7 @@ export default function NewReceiptPage() {
         });
 
         if (res.success) {
-            router.push('/admin/accounting/receipts');
+            router.push('/accounting/receipts');
             router.refresh();
         } else {
             alert('Error: ' + res.error);
@@ -71,7 +77,7 @@ export default function NewReceiptPage() {
     return (
         <div className="max-w-3xl mx-auto space-y-6">
             <div className="flex items-center gap-4">
-                <Link href="/admin/accounting/receipts">
+                <Link href="/accounting/receipts">
                     <Button variant="ghost" size="icon">
                         <ArrowRight className="w-4 h-4" />
                     </Button>
@@ -119,22 +125,58 @@ export default function NewReceiptPage() {
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                             <div className="space-y-2">
                                 <Label>اختيار عميل (ربط بالحساب)</Label>
-                                <Select value={relatedUserId} onValueChange={(val) => {
-                                    setRelatedUserId(val);
-                                    const u = users.find(u => u.id === val);
-                                    if (u) setPayer(u.username || u.name);
-                                }}>
-                                    <SelectTrigger>
-                                        <SelectValue placeholder="بحث عن عميل..." />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        {users.map(u => (
-                                            <SelectItem key={u.id} value={u.id}>
-                                                {u.username || u.name || 'Unknown'} ({u.id.substring(0, 4)})
-                                            </SelectItem>
-                                        ))}
-                                    </SelectContent>
-                                </Select>
+                                <Popover open={open} onOpenChange={setOpen}>
+                                    <PopoverTrigger asChild>
+                                        <Button
+                                            variant="outline"
+                                            role="combobox"
+                                            aria-expanded={open}
+                                            className="w-full justify-between h-auto py-3"
+                                        >
+                                            {selectedUser
+                                                ? (
+                                                    <div className="flex flex-col items-start gap-1">
+                                                        <span className="font-medium">{selectedUser.name || selectedUser.username || 'عميل بدون اسم'}</span>
+                                                        <span className="text-xs text-muted-foreground font-mono">{selectedUser.username || selectedUser.id.substring(0, 8)}</span>
+                                                    </div>
+                                                )
+                                                : "بحث عن عميل بالاسم أو الكود..."}
+                                            <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                                        </Button>
+                                    </PopoverTrigger>
+                                    <PopoverContent className="w-[350px] p-0" align="start">
+                                        <Command>
+                                            <CommandInput placeholder="ابحث باسم العميل..." />
+                                            <CommandList>
+                                                <CommandEmpty>لم يتم العثور على عميل.</CommandEmpty>
+                                                <CommandGroup>
+                                                    {users.map((user) => (
+                                                        <CommandItem
+                                                            key={user.id}
+                                                            value={`${user.name || ''} ${user.username || ''} ${user.id}`} // Searchable string
+                                                            onSelect={() => {
+                                                                setRelatedUserId(user.id);
+                                                                setPayer(user.name || user.username || '');
+                                                                setOpen(false);
+                                                            }}
+                                                        >
+                                                            <Check
+                                                                className={cn(
+                                                                    "mr-2 h-4 w-4",
+                                                                    relatedUserId === user.id ? "opacity-100" : "opacity-0"
+                                                                )}
+                                                            />
+                                                            <div className="flex flex-col whitespace-normal">
+                                                                <span className="font-medium">{user.name || user.username || 'عميل بدون اسم'}</span>
+                                                                <span className="text-xs text-muted-foreground font-mono">{user.username || user.id.substring(0, 8)}</span >
+                                                            </div>
+                                                        </CommandItem>
+                                                    ))}
+                                                </CommandGroup>
+                                            </CommandList>
+                                        </Command>
+                                    </PopoverContent>
+                                </Popover>
                             </div>
 
                             <div className="space-y-2">

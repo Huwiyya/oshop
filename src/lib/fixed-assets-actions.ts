@@ -61,6 +61,32 @@ export async function getFixedAssets(categoryId?: string) {
     return data;
 }
 
+// --- دوال مساعدة لإنشاء الحسابات ---
+async function getAccountCode(id: string) {
+    const { data } = await supabaseAdmin.from('accounts').select('account_code, account_type_id').eq('id', id).single();
+    return data;
+}
+
+async function generateNextCode(parentId: string, parentCode: string) {
+    const { data: lastChild } = await supabaseAdmin
+        .from('accounts')
+        .select('account_code')
+        .eq('parent_id', parentId)
+        .order('account_code', { ascending: false })
+        .limit(1)
+        .single();
+
+    if (lastChild && lastChild.account_code) {
+        // Try to increment numeric part
+        // If code is "12001", next is "12002"
+        const num = parseInt(lastChild.account_code);
+        if (!isNaN(num)) {
+            return (num + 1).toString();
+        }
+    }
+    return parentCode + '001';
+}
+
 export async function createFixedAsset(data: {
     name_ar: string;
     asset_code: string;
@@ -71,15 +97,83 @@ export async function createFixedAsset(data: {
     salvage_value?: number;
     notes?: string;
 }) {
-    // Calculate initial Net Book Value (Cost)
-    const net_book_value = data.cost;
+    // 1. Get Category Details to find Parent Account
+    const { data: category } = await supabaseAdmin
+        .from('asset_categories')
+        .select('*')
+        .eq('id', data.category_id)
+        .single();
 
+    if (!category || !category.asset_account_id) {
+        throw new Error('فئة الأصل غير مرتبطة بحساب رئيسي للأصول');
+    }
+
+    const parentAccountData = await getAccountCode(category.asset_account_id);
+    if (!parentAccountData) throw new Error('حساب الأصول الرئيسي للفئة غير موجود');
+
+    // 2. Create "Asset Parent" Account (The Container) -> e.g. "Toyota Camry"
+    // This account will be a PARENT account in the tree
+    const assetParentCode = await generateNextCode(category.asset_account_id, parentAccountData.account_code);
+
+    const { data: assetParent, error: err1 } = await supabaseAdmin.from('accounts').insert({
+        name_ar: data.name_ar,
+        name_en: data.name_ar, // auto copy
+        account_code: assetParentCode,
+        parent_id: category.asset_account_id,
+        account_type_id: parentAccountData.account_type_id,
+        is_parent: true, // It acts as a wrapper
+        level: 4, // Assuming category is 3
+        current_balance: 0,
+        is_active: true
+    }).select().single();
+
+    if (err1) throw new Error(`فشل إنشاء حساب الأصل الرئيسي: ${err1.message}`);
+
+    // 3. Create "Cost" Sub-Account -> e.g. "Cost - Toyota Camry"
+    const costCode = assetParentCode + '01';
+    const { data: costAccount, error: err2 } = await supabaseAdmin.from('accounts').insert({
+        name_ar: `تكلفة - ${data.name_ar}`,
+        account_code: costCode,
+        parent_id: assetParent.id,
+        account_type_id: parentAccountData.account_type_id,
+        is_parent: false,
+        level: 5,
+        current_balance: 0,
+        is_active: true
+    }).select().single();
+
+    if (err2) throw new Error(`فشل إنشاء حساب التكلفة: ${err2.message}`);
+
+    // 4. Create "Accumulated Depreciation" Sub-Account -> e.g. "Accumulated Dep - Toyota Camry"
+    // Note: This should technically be under "Accumulated Depreciation" category if strict classification is needed,
+    // BUT user requested it to be UNDER the asset to show Net Book Value.
+    // So we put it under the assetParent.
+
+    const accDepCode = assetParentCode + '02';
+    const { data: accDepAccount, error: err3 } = await supabaseAdmin.from('accounts').insert({
+        name_ar: `مجمع إهلاك - ${data.name_ar}`,
+        account_code: accDepCode,
+        parent_id: assetParent.id,
+        account_type_id: parentAccountData.account_type_id, // Same type logic, handled by Credit/Debit nature
+        is_parent: false,
+        level: 5,
+        current_balance: 0,
+        is_active: true
+    }).select().single();
+
+    if (err3) throw new Error(`فشل إنشاء حساب مجمع الإهلاك: ${err3.message}`);
+
+    // 5. Create Asset Record with links to these accounts
+    const net_book_value = data.cost;
     const { data: newAsset, error } = await supabaseAdmin
         .from('fixed_assets')
         .insert({
             ...data,
             net_book_value: net_book_value,
-            accumulated_depreciation: 0
+            accumulated_depreciation: 0,
+            cost_account_id: costAccount.id,
+            accumulated_account_id: accDepAccount.id
+            // We don't link expense account per asset, usually stays at category level
         })
         .select()
         .single();
@@ -96,59 +190,56 @@ export async function runDepreciation(date: string, note?: string) {
         .select(`
             *,
             category:asset_categories(
-                accumulated_depreciation_account_id,
                 depreciation_account_id
             )
         `)
         .eq('is_active', true)
-        .gt('net_book_value', 0); // Only depreciate if value remains
+        .gt('net_book_value', 0);
 
     if (!assets || assets.length === 0) return { count: 0, journalId: null };
 
-    // 2. Calculate Depreciation (Straight Line / Monthly)
-    // Assumption: Run monthly.
-    // Dep = (Cost - Salvage) / (LifeYears * 12)
-
     const lines: JournalEntryLine[] = [];
-    const updates: any[] = []; // To update asset record
 
     for (const asset of assets) {
-        if (!asset.category?.accumulated_depreciation_account_id || !asset.category?.depreciation_account_id) {
-            continue; // Skip if accounts not linked
+        // Use Asset Specific Accumulated Account if exists, else fallback (though createFixedAsset ensures it exists now)
+        // Expenses still go to Category Account (usually)
+        const accAccountId = asset.accumulated_account_id; // Added column
+        const expAccountId = asset.category?.depreciation_account_id;
+
+        if (!accAccountId || !expAccountId) {
+            console.warn(`Asset ${asset.name_ar} missing accounts linkage`);
+            continue;
         }
 
         const cost = asset.cost;
         const salvage = asset.salvage_value || 0;
-        const lifeMonths = (asset.useful_life_years || 5) * 12; // Default 5 years
+        const lifeMonths = (asset.useful_life_years || 5) * 12;
 
         let monthlyDep = (cost - salvage) / lifeMonths;
 
-        // Ensure we don't depreciate more than Net Book Value
         if (monthlyDep > asset.net_book_value) {
             monthlyDep = asset.net_book_value;
         }
 
-        if (monthlyDep <= 0) continue;
+        if (monthlyDep <= 0.01) continue;
 
-        // Add to Lines
-        // Dr. Dep Expense
+        // Dr. Dep Expense (Category Level)
         lines.push({
-            accountId: asset.category.depreciation_account_id,
+            accountId: expAccountId,
             description: `إهلاك - ${asset.name_ar}`,
             debit: monthlyDep,
             credit: 0
         });
 
-        // Cr. Accumulated Dep
+        // Cr. Accumulated Dep (Asset Specific Level)
         lines.push({
-            accountId: asset.category.accumulated_depreciation_account_id,
+            accountId: accAccountId,
             description: `مجمع إهلاك - ${asset.name_ar}`,
             debit: 0,
             credit: monthlyDep
         });
 
-        // Prepare Update
-        // Note: multiple updates in loop is slow, but acceptable for MVP
+        // Update Asset Record
         await supabaseAdmin
             .from('fixed_assets')
             .update({
@@ -159,11 +250,6 @@ export async function runDepreciation(date: string, note?: string) {
     }
 
     if (lines.length === 0) return { count: 0, journalId: null };
-
-    // 3. Create Journal Entry
-    // We should aggregate lines by account to reduce journal size? 
-    // Usually detailed is better for tracking, but aggregate is cleaner.
-    // Let's keep detailed for now.
 
     const { id: journalId } = await createJournalEntry({
         date: date,

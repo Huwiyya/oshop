@@ -30,6 +30,8 @@ const sidebarItems = [
     // العمليات التجارية
     { name: 'فواتير المبيعات', href: '/accounting/sales-invoices', icon: Receipt },
     { name: 'فواتير الشراء', href: '/accounting/purchase-invoices', icon: Receipt },
+    { name: 'سندات القبض', href: '/accounting/receipts', icon: Banknote },
+    { name: 'سندات الصرف', href: '/accounting/payments', icon: Banknote },
 
     // الخزينة والعملاء
     { name: 'النقدية والبنوك', href: '/accounting/cash-bank', icon: Banknote },

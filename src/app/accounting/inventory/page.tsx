@@ -12,6 +12,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Package, Search, Plus, CreditCard, Box, ArrowRight, Layers, Trash } from 'lucide-react';
 import { getInventoryItems, createInventoryItem, deleteInventoryItem } from '@/lib/inventory-actions';
+import { getAllAccounts } from '@/lib/accounting-actions';
 import { formatCurrency } from '@/lib/utils';
 import { useToast } from '@/components/ui/use-toast';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -204,12 +205,25 @@ function AddItemDialog({ onSuccess }: { onSuccess: () => void }) {
     const [open, setOpen] = useState(false);
     const [isLoading, setIsLoading] = useState(false);
     const { toast } = useToast();
+    const [accounts, setAccounts] = useState<any[]>([]);
+
+    useEffect(() => {
+        if (open) {
+            getAllAccounts().then(data => {
+                // Filter Revenue accounts (Class 4)
+                const revenues = data?.filter((a: any) => a.account_code.toString().startsWith('4') && !a.is_parent) || [];
+                setAccounts(revenues);
+            });
+        }
+    }, [open]);
+
     const [formData, setFormData] = useState({
         item_code: '',
         name_ar: '',
         name_en: '',
         category: 'general', // general or cards
-        description: ''
+        description: '',
+        revenue_account_id: ''
     });
 
     const handleSubmit = async (e: React.FormEvent) => {
@@ -219,7 +233,7 @@ function AddItemDialog({ onSuccess }: { onSuccess: () => void }) {
             await createInventoryItem(formData);
             toast({ title: 'تمت الإضافة بنجاح' });
             setOpen(false);
-            setFormData({ item_code: '', name_ar: '', name_en: '', category: 'general', description: '' });
+            setFormData({ item_code: '', name_ar: '', name_en: '', category: 'general', description: '', revenue_account_id: '' });
             onSuccess();
         } catch (error: any) {
             toast({ title: 'خطأ', description: error.message, variant: 'destructive' });
@@ -236,7 +250,7 @@ function AddItemDialog({ onSuccess }: { onSuccess: () => void }) {
                     إضافة صنف جديد
                 </Button>
             </DialogTrigger>
-            <DialogContent>
+            <DialogContent className="max-w-2xl">
                 <DialogHeader>
                     <DialogTitle>إضافة صنف مخزني جديد</DialogTitle>
                 </DialogHeader>
@@ -281,6 +295,31 @@ function AddItemDialog({ onSuccess }: { onSuccess: () => void }) {
                             </p>
                         )}
                     </div>
+
+                    <div className="space-y-2">
+                        <Label>حساب الإيراد المرتبط (اختياري)</Label>
+                        <Select
+                            value={formData.revenue_account_id}
+                            onValueChange={(v) => setFormData({ ...formData, revenue_account_id: v })}
+                        >
+                            <SelectTrigger>
+                                <SelectValue placeholder="الافتراضي (حساب المبيعات العام)" />
+                            </SelectTrigger>
+                            <SelectContent className="max-h-[200px]">
+                                {accounts.map((acc) => (
+                                    <SelectItem key={acc.id} value={acc.id}>
+                                        <span className="font-mono text-slate-500 ml-2">{acc.account_code}</span>
+                                        {acc.name_ar}
+                                    </SelectItem>
+                                ))}
+                            </SelectContent>
+                        </Select>
+                        <p className="text-xs text-slate-500">
+                            عند بيع هذا الصنف، سيتم تسجيل الإيراد في هذا الحساب بدلاً من حساب المبيعات العام.
+                            مفيد لفصل إيرادات (شي ان) عن المنتجات الأخرى.
+                        </p>
+                    </div>
+
                     <DialogFooter>
                         <Button type="submit" disabled={isLoading}>
                             {isLoading ? 'جاري الحفظ...' : 'حفظ الصنف'}
