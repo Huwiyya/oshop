@@ -264,12 +264,22 @@ export async function updatePayment(id: string, data: Omit<Payment, 'id' | 'refe
 
         // 3. Create new journal entry
         const journalEntry = await createJournalEntry({
-            entry_date: new Date(data.date).toISOString(),
-            reference: `PAY-UPDATE-${id.slice(0, 8)}`,
+            date: new Date(data.date).toISOString(),
             description: data.description,
-            total_debit: data.amount,
-            total_credit: data.amount,
-            created_by: 'system'
+            lines: [
+                {
+                    accountId: data.paymentAccountId,
+                    debit: data.amount,
+                    credit: 0,
+                    description: data.description
+                },
+                {
+                    accountId: data.paymentAccountId,
+                    debit: 0,
+                    credit: data.amount,
+                    description: data.description
+                }
+            ]
         });
 
         if (!journalEntry.success || !journalEntry.entry) {
@@ -299,7 +309,6 @@ export async function updatePayment(id: string, data: Omit<Payment, 'id' | 'refe
             .from('payments')
             .update({
                 payment_date: data.date,
-                supplier_id: data.relatedSupplierId || null,
                 total_amount: data.amount,
                 bank_account_id: data.paymentAccountId,
                 main_description: data.description,

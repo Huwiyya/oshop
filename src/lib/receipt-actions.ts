@@ -32,12 +32,22 @@ export async function createReceipt(data: Omit<Receipt, 'id' | 'reference'>) {
         const journalDate = new Date(data.date);
 
         const journalEntry = await createJournalEntry({
-            entry_date: journalDate.toISOString(),
-            reference: `Receipt - ${journalDate.toISOString().split('T')[0]}`,
+            date: journalDate.toISOString(),
             description: data.description,
-            total_debit: data.amount,
-            total_credit: data.amount,
-            created_by: 'system'
+            lines: [
+                {
+                    accountId: data.receiveAccountId,
+                    debit: data.amount,
+                    credit: 0,
+                    description: data.description
+                },
+                {
+                    accountId: data.receiveAccountId,
+                    debit: 0,
+                    credit: data.amount,
+                    description: data.description
+                }
+            ]
         });
 
         if (!journalEntry.success || !journalEntry.entry) {
@@ -259,12 +269,22 @@ export async function updateReceipt(id: string, data: Omit<Receipt, 'id' | 'refe
 
         // 3. Create new journal entry
         const journalEntry = await createJournalEntry({
-            entry_date: new Date(data.date).toISOString(),
-            reference: `REC-UPDATE-${id.slice(0, 8)}`,
+            date: new Date(data.date).toISOString(),
             description: data.description,
-            total_debit: data.amount,
-            total_credit: data.amount,
-            created_by: 'system'
+            lines: [
+                {
+                    accountId: data.receiveAccountId,
+                    debit: data.amount,
+                    credit: 0,
+                    description: data.description
+                },
+                {
+                    accountId: data.receiveAccountId,
+                    debit: 0,
+                    credit: data.amount,
+                    description: data.description
+                }
+            ]
         });
 
         if (!journalEntry.success || !journalEntry.entry) {
