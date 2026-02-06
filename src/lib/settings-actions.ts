@@ -140,20 +140,6 @@ export async function formatAccountingData() {
             }
         }
 
-        // 11. Reset account balances for cash/bank accounts
-        try {
-            const { error } = await supabaseAdmin
-                .from('accounts')
-                .update({ current_balance: 0 })
-                .in('account_type', ['نقدية', 'بنوك', 'Cash', 'Bank']);
-            if (error) throw error;
-            successCount++;
-        } catch (e: any) {
-            if (!e.message?.includes('Could not find the table')) {
-                errors.push(`أرصدة الحسابات: ${e.message}`);
-            }
-        }
-
         // Revalidate all accounting pages
         revalidatePath('/accounting/dashboard');
         revalidatePath('/accounting/journal-entries');
