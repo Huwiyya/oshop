@@ -50,6 +50,10 @@ ADD COLUMN IF NOT EXISTS deleted_by TEXT;
 -- 3. Database Function لتحديث رصيد الحساب بشكل آمن
 -- ============================================
 
+-- حذف النسخة القديمة إن وجدت
+DROP FUNCTION IF EXISTS update_account_balance();
+DROP FUNCTION IF EXISTS update_account_balance(TEXT, NUMERIC, TEXT);
+
 CREATE OR REPLACE FUNCTION update_account_balance(
     p_account_id TEXT,
     p_amount NUMERIC,
