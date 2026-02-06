@@ -3,7 +3,6 @@
 import React, { useState, useEffect } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import { getReceiptById } from '@/lib/receipt-actions';
-import { getCashAccounts, getBankAccounts } from '@/lib/accounting-actions';
 import { getUsers } from '@/lib/actions';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -47,10 +46,11 @@ export default function EditReceiptPage() {
         async function loadData() {
             setIsFetching(true);
             try {
-                const [receiptData, cash, bank, usersList] = await Promise.all([
+                // Load ALL accounts from chart instead of just cash/bank
+                const { getAllAccounts } = await import('@/lib/accounting-actions');
+                const [receiptData, allAccounts, usersList] = await Promise.all([
                     getReceiptById(receiptId),
-                    getCashAccounts(),
-                    getBankAccounts(),
+                    getAllAccounts(),
                     getUsers()
                 ]);
 
@@ -70,7 +70,7 @@ export default function EditReceiptPage() {
                 setCurrency(receiptData.currency);
                 setReference(receiptData.reference);
 
-                setAccounts([...cash, ...bank]);
+                setAccounts(allAccounts);
                 setUsers(usersList);
             } catch (e) {
                 toast({ title: 'خطأ', description: 'فشل تحميل البيانات', variant: 'destructive' });
@@ -145,19 +145,19 @@ export default function EditReceiptPage() {
                             <Input type="date" value={date} onChange={e => setDate(e.target.value)} />
                         </div>
                         <div className="space-y-2">
-                            <Label>الحساب المستلم (إلى)</Label>
+                            <Label>الحساب المستلم (إلى) - من شجرة الحسابات</Label>
                             <Select value={accountId} onValueChange={(val) => {
                                 setAccountId(val);
                                 const acc = accounts.find(a => a.id === val);
                                 if (acc) setCurrency(acc.currency);
                             }}>
                                 <SelectTrigger>
-                                    <SelectValue placeholder="اختر الخزينة أو البنك" />
+                                    <SelectValue placeholder="اختر أي حساب (خزينة، بنك، مصروف، إلخ)" />
                                 </SelectTrigger>
                                 <SelectContent>
                                     {accounts.map(acc => (
                                         <SelectItem key={acc.id} value={acc.id}>
-                                            {acc.name_ar || acc.name_en} ({acc.currency})
+                                            {acc.name_ar || acc.name_en} ({acc.currency || 'LYD'})
                                         </SelectItem>
                                     ))}
                                 </SelectContent>
