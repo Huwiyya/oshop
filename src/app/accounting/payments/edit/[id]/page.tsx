@@ -80,7 +80,6 @@ export default function EditPaymentPage() {
         const result = await updatePayment(paymentId, {
             date,
             payee,
-            relatedSupplierId: undefined,
             paymentAccountId: accountId,
             paymentAccountName: '',
             description,
