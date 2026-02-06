@@ -156,6 +156,20 @@ export async function formatAccountingData() {
             }
         }
 
+        // 11. Reset all account balances to zero (after deleting all transactions)
+        try {
+            const { error } = await supabaseAdmin
+                .from('accounts')
+                .update({ current_balance: 0 })
+                .neq('id', '00000000-0000-0000-0000-000000000000');
+            if (error) throw error;
+            successCount++;
+        } catch (e: any) {
+            if (!e.message?.includes('Could not find the table')) {
+                errors.push(`تصفير أرصدة الحسابات: ${e.message}`);
+            }
+        }
+
         // Revalidate all accounting pages
         revalidatePath('/accounting/dashboard');
         revalidatePath('/accounting/journal-entries');
