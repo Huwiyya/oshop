@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -22,7 +22,7 @@ import {
     AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 
-export default function SalesInvoicesPage() {
+function SalesInvoicesContent() {
     const [invoices, setInvoices] = useState<any[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -154,5 +154,13 @@ export default function SalesInvoicesPage() {
                 </AlertDialogContent>
             </AlertDialog>
         </div>
+    );
+}
+
+export default function SalesInvoicesPage() {
+    return (
+        <Suspense fallback={<div className="text-center py-10">جاري التحميل...</div>}>
+            <SalesInvoicesContent />
+        </Suspense>
     );
 }

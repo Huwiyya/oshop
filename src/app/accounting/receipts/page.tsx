@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { getReceipts, deleteReceipt } from '@/lib/receipt-actions';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -12,7 +12,7 @@ import { format } from 'date-fns';
 import { ListFilter } from '@/components/accounting/list-filter';
 import { useToast } from '@/components/ui/use-toast';
 
-export default function ReceiptsPage() {
+function ReceiptsContent() {
     const searchParams = useSearchParams();
     const { toast } = useToast();
     const [receipts, setReceipts] = useState<any[]>([]);
@@ -133,5 +133,13 @@ export default function ReceiptsPage() {
                 </CardContent>
             </Card>
         </div>
+    );
+}
+
+export default function ReceiptsPage() {
+    return (
+        <Suspense fallback={<div className="text-center py-10">جاري التحميل...</div>}>
+            <ReceiptsContent />
+        </Suspense>
     );
 }

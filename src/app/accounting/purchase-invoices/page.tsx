@@ -1,7 +1,7 @@
 
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -13,7 +13,7 @@ import { useToast } from '@/components/ui/use-toast';
 import { Badge } from '@/components/ui/badge';
 import { ListFilter } from '@/components/accounting/list-filter';
 
-export default function PurchaseInvoicesPage() {
+function PurchaseInvoicesContent() {
     const [invoices, setInvoices] = useState<any[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const router = useRouter();
@@ -135,4 +135,12 @@ function PaymentStatusBadge({ status }: { status: string }) {
         'unpaid': 'غير مدفوعة',
     };
     return <Badge variant="secondary" className={styles[status] || ''}>{labels[status] || status}</Badge>;
+}
+
+export default function PurchaseInvoicesPage() {
+    return (
+        <Suspense fallback={<div className="text-center py-10">جاري التحميل...</div>}>
+            <PurchaseInvoicesContent />
+        </Suspense>
+    );
 }
