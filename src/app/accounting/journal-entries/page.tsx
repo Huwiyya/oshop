@@ -136,12 +136,13 @@ function DeleteJournalEntryButton({ entry, onSuccess }: { entry: any; onSuccess:
     };
 
     const hasReference = entry.reference_type && entry.reference_type !== 'manual';
-    const referenceTypeAr = {
+    const referenceTypeAr: Record<string, string> = {
         'receipt': 'سند قبض',
         'payment': 'سند صرف',
         'sales_invoice': 'فاتورة بيع',
         'purchase_invoice': 'فاتورة شراء'
-    }[entry.reference_type] || entry.reference_type;
+    };
+    const referenceLabel = referenceTypeAr[entry.reference_type] || entry.reference_type;
 
     return (
         <AlertDialog>
@@ -166,7 +167,7 @@ function DeleteJournalEntryButton({ entry, onSuccess }: { entry: any; onSuccess:
                             <div className="bg-red-50 border border-red-200 p-3 rounded-md">
                                 <p className="text-red-700 font-bold">⚠️ تحذير شديد الأهمية:</p>
                                 <p className="text-red-600 text-sm mt-1">
-                                    هذا القيد مرتبط بـ <strong>{referenceTypeAr}</strong>
+                                    هذا القيد مرتبط بـ <strong>{referenceLabel}</strong>
                                     <br />
                                     سيتم حذف <strong>المستند الأصلي</strong> مع القيد!
                                 </p>
@@ -176,7 +177,7 @@ function DeleteJournalEntryButton({ entry, onSuccess }: { entry: any; onSuccess:
                         <div className="bg-orange-50 border border-orange-200 p-3 rounded-md text-sm">
                             <p className="text-orange-800">سيؤدي الحذف إلى:</p>
                             <ul className="list-disc list-inside text-orange-700 mt-1 space-y-1">
-                                {hasReference && <li>حذف {referenceTypeAr} المرتبط</li>}
+                                {hasReference && <li>حذف {referenceLabel} المرتبط</li>}
                                 <li>حذف جميع أسطر القيد</li>
                                 <li>تحديث أرصدة الحسابات</li>
                                 <li><strong>لا يمكن التراجع عن هذا الإجراء!</strong></li>
