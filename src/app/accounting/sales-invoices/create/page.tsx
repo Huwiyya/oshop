@@ -383,12 +383,12 @@ function AddItemDialog({ inventoryItems, onAdd, currency }: { inventoryItems: an
                             ) : (
                                 <div className="space-y-2 max-h-60 overflow-y-auto">
                                     {availableCards.map(card => (
-                                        <div key={card.id} className="flex items-center space-x-2 space-x-reverse bg-white p-2 border rounded hover:bg-emerald-50 cursor-pointer" onClick={() => toggleCardSelection(card.id)}>
+                                        <div key={card.id} className="flex items-center space-x-2 space-x-reverse bg-white p-2 border rounded hover:bg-emerald-50">
                                             <Checkbox
                                                 checked={selectedCardIds.includes(card.id)}
                                                 onCheckedChange={() => toggleCardSelection(card.id)}
                                             />
-                                            <div className="flex-1 text-sm font-mono flex justify-between">
+                                            <div className="flex-1 text-sm font-mono flex justify-between cursor-pointer" onClick={() => toggleCardSelection(card.id)}>
                                                 <span>{card.card_number}</span>
                                                 <span className="text-slate-400 text-xs">شراء: {card.purchase_date}</span>
                                             </div>
