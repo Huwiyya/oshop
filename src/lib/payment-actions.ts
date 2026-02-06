@@ -118,75 +118,210 @@ export async function createPayment(data: Omit<Payment, 'id' | 'reference'>) {
     }
 }
 
-export async function getPayments(): Promise<Payment[]> {
-    const { data, error } = await supabaseAdmin
-        .from('accounting_transactions')
+export async function getPaymentById(id: string) {
+    try {
+        const { data, error } = await supabaseAdmin
+            .from('payments')
+            .select(`
+                *,
+                bank_account:accounts!bank_account_id(id, name_ar, name_en, account_code, currency)
+            `)
+            .eq('id', id)
+            .single();
+
+        if (error || !data) {
+            return null;
+        }
+
+        return {
+            id: data.id,
+            date: data.payment_date,
+            reference: data.payment_number,
+            payee: data.supplier_id ? `مورد ${data.supplier_id}` : '-',
+            relatedSupplierId: data.supplier_id,
+            paymentAccountId: data.bank_account_id,
+            paymentAccountName: data.bank_account?.name_ar || data.bank_account?.name_en || 'غير محدد',
+            description: data.main_description,
+            amount: data.total_amount,
+            currency: (data.bank_account?.currency || 'LYD') as 'LYD' | 'USD',
+            lineItems: []
+        };
+    } catch (e) {
+        console.error('Error fetching payment:', e);
+        return null;
+    }
+}
+
+export async function getPayments(filters?: { query?: string; startDate?: string; endDate?: string }): Promise<Payment[]> {
+    let query = supabaseAdmin
+        .from('payments')
         .select(`
             *,
-            account:account_id(name)
+            bank_account:accounts!bank_account_id(id, name_ar, name_en, account_code)
         `)
-        .eq('type', 'payment')
-        .order('date', { ascending: false })
-        .limit(50);
+        .order('payment_date', { ascending: false });
 
-    if (error) return [];
+    if (filters?.startDate) query = query.gte('payment_date', filters.startDate);
+    if (filters?.endDate) query = query.lte('payment_date', filters.endDate);
+    if (filters?.query) {
+        query = query.or(`main_description.ilike.%${filters.query}%,payment_number.ilike.%${filters.query}%`);
+    }
+
+    const { data, error } = await query.limit(50);
+
+    if (error) {
+        console.error('Error fetching payments:', error);
+        return [];
+    }
 
     return data.map((d: any) => ({
         id: d.id,
-        date: d.date,
-        reference: d.reference,
-        payee: d.payee,
-        paymentAccountId: d.account_id,
-        paymentAccountName: d.account?.name || 'Unknown',
-        description: d.description,
-        amount: d.amount,
-        currency: d.currency,
-        lineItems: d.line_items
+        date: d.payment_date,
+        reference: d.payment_number,
+        payee: d.supplier_id ? `مورد ${d.supplier_id}` : '-', // يمكن تحسين هذا لاحقاً بجلب اسم المورد
+        paymentAccountId: d.bank_account_id,
+        paymentAccountName: d.bank_account?.name_ar || d.bank_account?.name_en || 'غير محدد',
+        description: d.main_description,
+        amount: d.total_amount,
+        currency: 'LYD',
+        lineItems: []
     }));
 }
 
-export async function updatePayment(id: string, data: Omit<Payment, 'id' | 'reference'>) {
+export async function deletePayment(id: string) {
     try {
-        // 1. Get Old Transaction
-        const { data: oldTrx } = await supabaseAdmin.from('accounting_transactions').select('*').eq('id', id).single();
-        if (!oldTrx) throw new Error('Payment not found');
+        // 1. جلب السند للحصول على معرف القيد اليومي
+        const { data: payment, error: fetchError } = await supabaseAdmin
+            .from('payments')
+            .select('journal_entry_id')
+            .eq('id', id)
+            .single();
 
-        // 2. Reverse Old Impact (Restore Balance of OLD account)
-        // Manual Restore for Old Account
-        const { data: oldAcc } = await supabaseAdmin.from('treasury_cards_v4').select('balance').eq('id', oldTrx.account_id).single();
-        if (oldAcc) {
-            await supabaseAdmin.from('treasury_cards_v4')
-                .update({ balance: oldAcc.balance + oldTrx.amount })
-                .eq('id', oldTrx.account_id);
+        if (fetchError || !payment) {
+            throw new Error('لم يتم العثور على سند الدفع');
         }
 
-        // 3. Update Transaction
-        const { error: updateError } = await supabaseAdmin.from('accounting_transactions').update({
-            date: data.date,
-            payee: data.payee,
-            account_id: data.paymentAccountId, // New Account
-            description: data.description,
-            amount: data.amount, // New Amount
-            currency: data.currency,
-            line_items: data.lineItems
-        }).eq('id', id);
+        // 2. حذف القيد اليومي المرتبط أولاً (بسبب foreign key)
+        if (payment.journal_entry_id) {
+            const { error: journalError } = await supabaseAdmin
+                .from('journal_entries')
+                .delete()
+                .eq('id', payment.journal_entry_id);
 
-        if (updateError) throw updateError;
+            if (journalError) {
+                console.error('Error deleting journal entry:', journalError);
+                // نستمر في حذف السند حتى لو فشل حذف القيد
+            }
+        }
 
-        // 4. Apply New Impact (Deduct from NEW account)
-        const { data: newAcc } = await supabaseAdmin.from('treasury_cards_v4').select('balance').eq('id', data.paymentAccountId).single();
-        if (newAcc) {
-            await supabaseAdmin.from('treasury_cards_v4')
-                .update({ balance: newAcc.balance - data.amount })
-                .eq('id', data.paymentAccountId);
+        // 3. حذف سطور السند (payment_lines)
+        await supabaseAdmin
+            .from('payment_lines')
+            .delete()
+            .eq('payment_id', id);
+
+        // 4. حذف السند نفسه
+        const { error: deleteError } = await supabaseAdmin
+            .from('payments')
+            .delete()
+            .eq('id', id);
+
+        if (deleteError) {
+            throw new Error('فشل حذف سند الدفع: ' + deleteError.message);
         }
 
         revalidatePath('/accounting/payments');
         revalidatePath('/accounting/dashboard');
         revalidatePath('/accounting/cash-bank');
-        return { success: true };
 
+        return { success: true };
     } catch (e: any) {
+        console.error('Delete Payment Error:', e);
+        return { success: false, error: e.message };
+    }
+}
+
+}
+
+
+export async function updatePayment(id: string, data: Omit<Payment, 'id' | 'reference'>) {
+    try {
+        // 1. Get existing payment
+        const { data: existingPayment, error: fetchError } = await supabaseAdmin
+            .from('payments')
+            .select('journal_entry_id')
+            .eq('id', id)
+            .single();
+
+        if (fetchError || !existingPayment) {
+            throw new Error('لم يتم العثور على السند');
+        }
+
+        // 2. Delete old journal entry
+        if (existingPayment.journal_entry_id) {
+            await supabaseAdmin
+                .from('journal_entries')
+                .delete()
+                .eq('id', existingPayment.journal_entry_id);
+        }
+
+        // 3. Create new journal entry
+        const journalEntry = await createJournalEntry({
+            entry_date: new Date(data.date).toISOString(),
+            reference: `PAY-UPDATE-${id.slice(0, 8)}`,
+            description: data.description,
+            total_debit: data.amount,
+            total_credit: data.amount,
+            created_by: 'system'
+        });
+
+        if (!journalEntry.success || !journalEntry.entry) {
+            throw new Error('فشل إنشاء القيد اليومي');
+        }
+
+        // 4. Add journal lines
+        await supabaseAdmin.from('journal_lines').insert([
+            {
+                journal_entry_id: journalEntry.entry.id,
+                account_id: data.paymentAccountId,
+                debit: data.amount,
+                credit: 0,
+                description: data.description
+            },
+            {
+                journal_entry_id: journalEntry.entry.id,
+                account_id: data.paymentAccountId,
+                debit: 0,
+                credit: data.amount,
+                description: data.description
+            }
+        ]);
+
+        // 5. Update payment
+        const { error: updateError } = await supabaseAdmin
+            .from('payments')
+            .update({
+                payment_date: data.date,
+                supplier_id: data.relatedSupplierId || null,
+                total_amount: data.amount,
+                bank_account_id: data.paymentAccountId,
+                main_description: data.description,
+                journal_entry_id: journalEntry.entry.id,
+                updated_at: new Date().toISOString()
+            })
+            .eq('id', id);
+
+        if (updateError) {
+            throw new Error('فشل تحديث السند');
+        }
+
+        revalidatePath('/accounting/payments');
+        revalidatePath('/accounting/dashboard');
+        revalidatePath('/accounting/cash-bank');
+
+        return { success: true };
+    } catch (e: any) {
+        console.error('Update Payment Error:', e);
         return { success: false, error: e.message };
     }
 }

@@ -108,7 +108,7 @@ export default function NewReceiptPage() {
                                 <SelectContent>
                                     {accounts.map(acc => (
                                         <SelectItem key={acc.id} value={acc.id}>
-                                            {acc.name} ({acc.currency})
+                                            {acc.name_ar || acc.name_en} ({acc.currency})
                                         </SelectItem>
                                     ))}
                                 </SelectContent>

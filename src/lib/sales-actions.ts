@@ -26,14 +26,22 @@ export type CreateSalesInvoiceData = {
     notes?: string;
 };
 
-export async function getSalesInvoices() {
-    const { data, error } = await supabaseAdmin
+export async function getSalesInvoices(filters?: { query?: string; startDate?: string; endDate?: string }) {
+    let query = supabaseAdmin
         .from('sales_invoices')
         .select(`
             *,
             customer:accounts!customer_account_id(name_ar, name_en)
         `)
         .order('invoice_date', { ascending: false });
+
+    if (filters?.startDate) query = query.gte('invoice_date', filters.startDate);
+    if (filters?.endDate) query = query.lte('invoice_date', filters.endDate);
+    if (filters?.query) {
+        query = query.or(`invoice_number.ilike.%${filters.query}%,notes.ilike.%${filters.query}%`);
+    }
+
+    const { data, error } = await query.limit(50);
 
     if (error) {
         console.error('Error fetching sales invoices:', error);

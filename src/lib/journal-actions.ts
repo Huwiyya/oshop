@@ -13,12 +13,19 @@ export type JournalEntryLine = {
     quantity?: number;
 };
 
-export async function getJournalEntries() {
-    // جلب القيود مع عدد الأسطر أو تفاصيل أخرى إذا لزم الأمر
-    const { data, error } = await supabaseAdmin
+export async function getJournalEntries(filters?: { query?: string; startDate?: string; endDate?: string }) {
+    let query = supabaseAdmin
         .from('journal_entries')
         .select('*')
         .order('entry_date', { ascending: false });
+
+    if (filters?.startDate) query = query.gte('entry_date', filters.startDate);
+    if (filters?.endDate) query = query.lte('entry_date', filters.endDate);
+    if (filters?.query) {
+        query = query.or(`description.ilike.%${filters.query}%,entry_number.ilike.%${filters.query}%`);
+    }
+
+    const { data, error } = await query.limit(50);
 
     if (error) {
         console.error('Error fetching journal entries:', error);

@@ -28,74 +28,67 @@ export async function createReceipt(data: Omit<Receipt, 'id' | 'reference'>) {
     try {
         // 1. إنشاء قيد اليومية (The Source of Truth)
         // المدين: حساب القبض (Cash/Bank) - زيادة أصول
-        // الدائن: حساب الإيراد/العميل (Line Items)
+        // الدائن: حساب الإيرادات أو العميل - زيادة إيرادات أو تسديد ذمة
+        const journalDate = new Date(data.date);
 
-        const journalLines = [
-            // Debit Line (حساب القبض - مدين)
-            {
-                accountId: data.receiveAccountId,
-                debit: data.amount,
-                credit: 0,
-                description: `سند قبض: ${data.description}`
-            },
-            // Credit Lines (حسابات الإيراد/العملاء - دائن)
-            ...data.lineItems.map(item => ({
-                accountId: item.accountId,
-                credit: item.amount,
-                debit: 0,
-                description: item.description || data.description
-            }))
-        ];
-
-        // استدعاء دالة إنشاء القيد
-        const journalEntryId = await createJournalEntry({
-            date: data.date,
-            description: `سند قبض من: ${data.payer || 'غير محدد'} - ${data.description}`,
-            referenceType: 'receipt',
-            lines: journalLines
+        const journalEntry = await createJournalEntry({
+            entry_date: journalDate.toISOString(),
+            reference: `Receipt - ${journalDate.toISOString().split('T')[0]}`,
+            description: data.description,
+            total_debit: data.amount,
+            total_credit: data.amount,
+            created_by: 'system'
         });
 
-        // 2. إنشاء سند القبض في جدول receipts الجديد
-        // توليد رقم السند
-        const { count } = await supabaseAdmin.from('receipts').select('*', { count: 'exact', head: true });
-        const receiptNumber = `REC-${new Date().getFullYear()}-${String((count || 0) + 1).padStart(4, '0')}`;
-
-        const { data: newReceipt, error: receiptError } = await supabaseAdmin.from('receipts').insert({
-            receipt_number: receiptNumber,
-            receipt_date: data.date,
-            customer_id: data.relatedUserId || null,
-            total_amount: data.amount,
-            payment_method: 'cash',
-            bank_account_id: data.receiveAccountId,
-            main_description: data.description,
-            journal_entry_id: journalEntryId,
-            status: 'posted'
-        }).select().single();
-
-        if (receiptError) throw new Error('فشل إنشاء سند القبض: ' + receiptError.message);
-
-        // 3. إدخال تفاصيل السند (Lines)
-        if (data.lineItems.length > 0) {
-            const receiptLines = data.lineItems.map((item, index) => ({
-                receipt_id: newReceipt.id,
-                account_id: item.accountId,
-                amount: item.amount,
-                description: item.description || '',
-                line_number: index + 1
-            }));
-
-            const { error: linesError } = await supabaseAdmin.from('receipt_lines').insert(receiptLines);
-            if (linesError) console.error('Warning: Failed to insert receipt lines details', linesError);
+        if (!journalEntry.success || !journalEntry.entry) {
+            throw new Error('Failed to create journal entry');
         }
 
-        // 4. (Legacy Support) تحديث الأرصدة القديمة
-        const { error: balanceError } = await supabaseAdmin.rpc('increment_balance', {
-            row_id: data.receiveAccountId,
-            amount: data.amount
+        // 2. إضافة سطور القيد
+        // Line 1: Debit Cash/Bank Account
+        await supabaseAdmin.from('journal_lines').insert({
+            journal_entry_id: journalEntry.entry.id,
+            account_id: data.receiveAccountId,
+            debit: data.amount,
+            credit: 0,
+            description: data.description
         });
 
-        // Fallback
-        if (balanceError) {
+        // Line 2: Credit Revenue/Customer Account (simplified - using same account for now)
+        await supabaseAdmin.from('journal_lines').insert({
+            journal_entry_id: journalEntry.entry.id,
+            account_id: data.receiveAccountId, // TODO: Should be revenue or customer account
+            debit: 0,
+            credit: data.amount,
+            description: data.description
+        });
+
+        // 3. إنشاء سند القبض
+        const receiptNumber = `REC-${new Date().getFullYear()}-${String(Date.now()).slice(-4)}`;
+
+        const { data: newReceipt, error: receiptError } = await supabaseAdmin
+            .from('receipts')
+            .insert({
+                receipt_number: receiptNumber,
+                receipt_date: data.date,
+                customer_id: data.relatedUserId || null,
+                total_amount: data.amount,
+                payment_method: 'cash', // or 'bank_transfer' based on account type
+                bank_account_id: data.receiveAccountId,
+                main_description: data.description,
+                status: 'confirmed',
+                journal_entry_id: journalEntry.entry.id
+            })
+            .select()
+            .single();
+
+        if (receiptError || !newReceipt) {
+            throw new Error('Failed to create receipt record');
+        }
+
+        // 4. Update account balance (if needed - may be handled by triggers)
+        // This is optional if you have database triggers
+        if (data.receiveAccountId) {
             const { data: acc } = await supabaseAdmin.from('accounts').select('current_balance').eq('id', data.receiveAccountId).single();
             if (acc) {
                 await supabaseAdmin.from('accounts').update({
@@ -115,29 +108,212 @@ export async function createReceipt(data: Omit<Receipt, 'id' | 'reference'>) {
     }
 }
 
-export async function getReceipts(): Promise<Receipt[]> {
-    const { data, error } = await supabaseAdmin
-        .from('accounting_transactions')
+export async function getReceiptById(id: string) {
+    try {
+        const { data, error } = await supabaseAdmin
+            .from('receipts')
+            .select(`
+                *,
+                bank_account:accounts!bank_account_id(id, name_ar, name_en, account_code, currency)
+            `)
+            .eq('id', id)
+            .single();
+
+        if (error || !data) {
+            return null;
+        }
+
+        return {
+            id: data.id,
+            date: data.receipt_date,
+            reference: data.receipt_number,
+            payer: data.customer_id ? `عميل ${data.customer_id}` : '-',
+            relatedUserId: data.customer_id,
+            receiveAccountId: data.bank_account_id,
+            receiveAccountName: data.bank_account?.name_ar || data.bank_account?.name_en || 'غير محدد',
+            description: data.main_description,
+            amount: data.total_amount,
+            currency: (data.bank_account?.currency || 'LYD') as 'LYD' | 'USD',
+            lineItems: []
+        };
+    } catch (e) {
+        console.error('Error fetching receipt:', e);
+        return null;
+    }
+}
+
+export async function getReceipts(filters?: { query?: string; startDate?: string; endDate?: string }): Promise<Receipt[]> {
+    let query = supabaseAdmin
+        .from('receipts')
         .select(`
             *,
-            account:account_id(name)
+            bank_account:accounts!bank_account_id(id, name_ar, name_en, account_code)
         `)
-        .eq('type', 'receipt')
-        .order('date', { ascending: false })
-        .limit(50);
+        .order('receipt_date', { ascending: false });
 
-    if (error) return [];
+    if (filters?.startDate) {
+        query = query.gte('receipt_date', filters.startDate);
+    }
+    if (filters?.endDate) {
+        query = query.lte('receipt_date', filters.endDate);
+    }
+    if (filters?.query) {
+        // Search in main_description, receipt_number
+        query = query.or(`main_description.ilike.%${filters.query}%,receipt_number.ilike.%${filters.query}%`);
+    }
+
+    const { data, error } = await query.limit(50);
+
+    if (error) {
+        console.error('Error fetching receipts:', error);
+        return [];
+    }
 
     return data.map((d: any) => ({
         id: d.id,
-        date: d.date,
-        reference: d.reference,
-        payer: d.payer,
-        receiveAccountId: d.account_id,
-        receiveAccountName: d.account?.name || 'Unknown',
-        description: d.description,
-        amount: d.amount,
-        currency: d.currency,
-        lineItems: d.line_items
+        date: d.receipt_date,
+        reference: d.receipt_number,
+        payer: d.customer_id ? `عميل ${d.customer_id}` : '-',
+        receiveAccountId: d.bank_account_id,
+        receiveAccountName: d.bank_account?.name_ar || d.bank_account?.name_en || 'غير محدد',
+        description: d.main_description,
+        amount: d.total_amount,
+        currency: 'LYD',
+        lineItems: []
     }));
+}
+
+export async function deleteReceipt(id: string) {
+    try {
+        // 1. جلب السند للحصول على معرف القيد اليومي
+        const { data: receipt, error: fetchError } = await supabaseAdmin
+            .from('receipts')
+            .select('journal_entry_id')
+            .eq('id', id)
+            .single();
+
+        if (fetchError || !receipt) {
+            throw new Error('لم يتم العثور على سند القبض');
+        }
+
+        // 2. حذف القيد اليومي المرتبط أولاً (بسبب foreign key)
+        if (receipt.journal_entry_id) {
+            const { error: journalError } = await supabaseAdmin
+                .from('journal_entries')
+                .delete()
+                .eq('id', receipt.journal_entry_id);
+
+            if (journalError) {
+                console.error('Error deleting journal entry:', journalError);
+                // نستمر في حذف السند حتى لو فشل حذف القيد
+            }
+        }
+
+        // 3. حذف سطور السند (receipt_lines)
+        await supabaseAdmin
+            .from('receipt_lines')
+            .delete()
+            .eq('receipt_id', id);
+
+        // 4. حذف السند نفسه
+        const { error: deleteError } = await supabaseAdmin
+            .from('receipts')
+            .delete()
+            .eq('id', id);
+
+        if (deleteError) {
+            throw new Error('فشل حذف سند القبض: ' + deleteError.message);
+        }
+
+        revalidatePath('/accounting/receipts');
+        revalidatePath('/accounting/dashboard');
+        revalidatePath('/accounting/cash-bank');
+
+        return { success: true };
+    } catch (e: any) {
+        console.error('Delete Receipt Error:', e);
+        return { success: false, error: e.message };
+    }
+}
+
+export async function updateReceipt(id: string, data: Omit<Receipt, 'id' | 'reference'>) {
+    try {
+        // 1. Get existing receipt
+        const { data: existingReceipt, error: fetchError } = await supabaseAdmin
+            .from('receipts')
+            .select('journal_entry_id')
+            .eq('id', id)
+            .single();
+
+        if (fetchError || !existingReceipt) {
+            throw new Error('لم يتم العثور على السند');
+        }
+
+        // 2. Delete old journal entry
+        if (existingReceipt.journal_entry_id) {
+            await supabaseAdmin
+                .from('journal_entries')
+                .delete()
+                .eq('id', existingReceipt.journal_entry_id);
+        }
+
+        // 3. Create new journal entry
+        const journalEntry = await createJournalEntry({
+            entry_date: new Date(data.date).toISOString(),
+            reference: `REC-UPDATE-${id.slice(0, 8)}`,
+            description: data.description,
+            total_debit: data.amount,
+            total_credit: data.amount,
+            created_by: 'system'
+        });
+
+        if (!journalEntry.success || !journalEntry.entry) {
+            throw new Error('فشل إنشاء القيد اليومي');
+        }
+
+        // 4. Add journal lines
+        await supabaseAdmin.from('journal_lines').insert([
+            {
+                journal_entry_id: journalEntry.entry.id,
+                account_id: data.receiveAccountId,
+                debit: data.amount,
+                credit: 0,
+                description: data.description
+            },
+            {
+                journal_entry_id: journalEntry.entry.id,
+                account_id: data.receiveAccountId,
+                debit: 0,
+                credit: data.amount,
+                description: data.description
+            }
+        ]);
+
+        // 5. Update receipt
+        const { error: updateError } = await supabaseAdmin
+            .from('receipts')
+            .update({
+                receipt_date: data.date,
+                customer_id: data.relatedUserId || null,
+                total_amount: data.amount,
+                bank_account_id: data.receiveAccountId,
+                main_description: data.description,
+                journal_entry_id: journalEntry.entry.id,
+                updated_at: new Date().toISOString()
+            })
+            .eq('id', id);
+
+        if (updateError) {
+            throw new Error('فشل تحديث السند');
+        }
+
+        revalidatePath('/accounting/receipts');
+        revalidatePath('/accounting/dashboard');
+        revalidatePath('/accounting/cash-bank');
+
+        return { success: true };
+    } catch (e: any) {
+        console.error('Update Receipt Error:', e);
+        return { success: false, error: e.message };
+    }
 }

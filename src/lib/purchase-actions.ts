@@ -29,14 +29,22 @@ export type CreateInvoiceData = {
 
 // --- الدوال ---
 
-export async function getPurchaseInvoices() {
-    const { data, error } = await supabaseAdmin
+export async function getPurchaseInvoices(filters?: { query?: string; startDate?: string; endDate?: string }) {
+    let query = supabaseAdmin
         .from('purchase_invoices')
         .select(`
             *,
             supplier:accounts!supplier_account_id(name_ar, name_en)
         `)
         .order('invoice_date', { ascending: false });
+
+    if (filters?.startDate) query = query.gte('invoice_date', filters.startDate);
+    if (filters?.endDate) query = query.lte('invoice_date', filters.endDate);
+    if (filters?.query) {
+        query = query.or(`invoice_number.ilike.%${filters.query}%,notes.ilike.%${filters.query}%`);
+    }
+
+    const { data, error } = await query.limit(50);
 
     if (error) {
         console.error('Error fetching invoices:', error);

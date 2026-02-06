@@ -2,27 +2,31 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Plus, FileText, Search, Filter, Trash } from 'lucide-react';
+import { Plus, Trash } from 'lucide-react';
 import { getPurchaseInvoices, deletePurchaseInvoice } from '@/lib/purchase-actions';
 import { formatCurrency } from '@/lib/utils';
 import { useToast } from '@/components/ui/use-toast';
-import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
+import { ListFilter } from '@/components/accounting/list-filter';
 
 export default function PurchaseInvoicesPage() {
     const [invoices, setInvoices] = useState<any[]>([]);
     const [isLoading, setIsLoading] = useState(true);
-    const [searchTerm, setSearchTerm] = useState('');
     const router = useRouter();
+    const searchParams = useSearchParams();
     const { toast } = useToast();
 
     const fetchInvoices = () => {
         setIsLoading(true);
-        getPurchaseInvoices().then(data => {
+        getPurchaseInvoices({
+            query: searchParams.get('q') || undefined,
+            startDate: searchParams.get('from') || undefined,
+            endDate: searchParams.get('to') || undefined
+        }).then(data => {
             setInvoices(data || []);
             setIsLoading(false);
         });
@@ -30,7 +34,7 @@ export default function PurchaseInvoicesPage() {
 
     useEffect(() => {
         fetchInvoices();
-    }, []);
+    }, [searchParams]);
 
     const handleDelete = async (e: React.MouseEvent, id: string) => {
         e.stopPropagation();
@@ -45,11 +49,6 @@ export default function PurchaseInvoicesPage() {
         }
     };
 
-    const filteredInvoices = invoices.filter(inv =>
-        inv.invoice_number.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        inv.supplier?.name_ar.includes(searchTerm)
-    );
-
     return (
         <div className="space-y-6">
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
@@ -63,18 +62,9 @@ export default function PurchaseInvoicesPage() {
                 </Button>
             </div>
 
+            <ListFilter placeholder="بحث برقم الفاتورة أو الملاحظات..." />
+
             <Card>
-                <div className="p-4 border-b flex items-center gap-4">
-                    <div className="relative flex-1 max-w-sm">
-                        <Search className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4" />
-                        <Input
-                            placeholder="بحث برقم الفاتورة أو المورد..."
-                            className="pr-9"
-                            value={searchTerm}
-                            onChange={(e) => setSearchTerm(e.target.value)}
-                        />
-                    </div>
-                </div>
                 <CardContent className="p-0">
                     <Table>
                         <TableHeader>
@@ -93,14 +83,14 @@ export default function PurchaseInvoicesPage() {
                         <TableBody>
                             {isLoading ? (
                                 <TableRow><TableCell colSpan={9} className="text-center py-10">جاري التحميل...</TableCell></TableRow>
-                            ) : filteredInvoices.length === 0 ? (
+                            ) : invoices.length === 0 ? (
                                 <TableRow>
                                     <TableCell colSpan={9} className="text-center py-10 text-slate-500">
                                         لا توجد فواتير شراء
                                     </TableCell>
                                 </TableRow>
                             ) : (
-                                filteredInvoices.map((inv) => (
+                                invoices.map((inv) => (
                                     <TableRow key={inv.id} className="cursor-pointer hover:bg-slate-50">
                                         <TableCell className="font-mono font-medium">{inv.invoice_number}</TableCell>
                                         <TableCell className="text-xs text-slate-500">{inv.invoice_date}</TableCell>
