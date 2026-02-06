@@ -1,9 +1,9 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { getCashAccounts, getBankAccounts, updateBankAccount, updateCashAccount, deleteBankAccount } from '@/lib/accounting-actions';
+import { getCashAccounts, getBankAccounts, updateBankAccount, updateCashAccount, deleteBankAccount, createBankAccount, createCashAccount } from '@/lib/accounting-actions';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { Wallet, Landmark, Pencil, Trash2 } from 'lucide-react';
+import { Wallet, Landmark, Pencil, Trash2, Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from '@/components/ui/dialog';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
@@ -156,6 +156,7 @@ export default function CashAndBankPage() {
                         <Wallet className="w-6 h-6 text-emerald-600" />
                         الخزائن النقدية
                     </h2>
+                    <AddCashAccountDialog onSuccess={loadData} />
                 </div>
 
                 <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
@@ -198,6 +199,7 @@ export default function CashAndBankPage() {
                         <Landmark className="w-6 h-6 text-blue-600" />
                         الحسابات البنكية
                     </h2>
+                    <AddBankAccountDialog onSuccess={loadData} />
                 </div>
 
                 <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
@@ -435,5 +437,176 @@ function DeleteAccountDialog({ account, onSuccess }: { account: Account; onSucce
                 </AlertDialogFooter>
             </AlertDialogContent>
         </AlertDialog>
+    );
+}
+
+function AddBankAccountDialog({ onSuccess }: { onSuccess: () => void }) {
+    const [open, setOpen] = useState(false);
+    const [loading, setLoading] = useState(false);
+    const { toast } = useToast();
+
+    const [formData, setFormData] = useState({
+        name: '',
+        currency: 'LYD' as 'LYD' | 'USD',
+        bankName: '',
+        accountNumber: ''
+    });
+
+    const handleSubmit = async (e: React.FormEvent) => {
+        e.preventDefault();
+        setLoading(true);
+        try {
+            const res = await createBankAccount(formData);
+            if (res.success) {
+                toast({ title: 'تم إضافة الحساب البنكي بنجاح' });
+                setOpen(false);
+                setFormData({ name: '', currency: 'LYD', bankName: '', accountNumber: '' });
+                onSuccess();
+            } else {
+                toast({ title: 'خطأ', description: res.error, variant: 'destructive' });
+            }
+        } catch (error: any) {
+            toast({ title: 'خطأ', description: error.message, variant: 'destructive' });
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    return (
+        <Dialog open={open} onOpenChange={setOpen}>
+            <DialogTrigger asChild>
+                <Button className="gap-2 bg-blue-600 hover:bg-blue-700">
+                    <Plus className="w-4 h-4" />
+                    إضافة حساب بنكي
+                </Button>
+            </DialogTrigger>
+            <DialogContent>
+                <DialogHeader>
+                    <DialogTitle>إضافة حساب بنكي جديد</DialogTitle>
+                </DialogHeader>
+                <form onSubmit={handleSubmit} className="space-y-4 py-4">
+                    <div className="space-y-2">
+                        <Label>اسم الحساب</Label>
+                        <Input
+                            required
+                            value={formData.name}
+                            onChange={e => setFormData({ ...formData, name: e.target.value })}
+                            placeholder="مثال: حساب بنك الجمهورية"
+                        />
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                            <Label>اسم البنك</Label>
+                            <Input
+                                value={formData.bankName}
+                                onChange={e => setFormData({ ...formData, bankName: e.target.value })}
+                                placeholder="بنك الجمهورية"
+                            />
+                        </div>
+                        <div className="space-y-2">
+                            <Label>رقم الحساب</Label>
+                            <Input
+                                value={formData.accountNumber}
+                                onChange={e => setFormData({ ...formData, accountNumber: e.target.value })}
+                                placeholder="123456789"
+                            />
+                        </div>
+                    </div>
+                    <div className="space-y-2">
+                        <Label>العملة</Label>
+                        <Select value={formData.currency} onValueChange={(v: any) => setFormData({ ...formData, currency: v })}>
+                            <SelectTrigger><SelectValue /></SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value="LYD">دينار ليبي</SelectItem>
+                                <SelectItem value="USD">دولار</SelectItem>
+                            </SelectContent>
+                        </Select>
+                    </div>
+                    <DialogFooter>
+                        <Button type="submit" disabled={loading}>
+                            {loading ? 'جاري الحفظ...' : 'حفظ'}
+                        </Button>
+                    </DialogFooter>
+                </form>
+            </DialogContent>
+        </Dialog>
+    );
+}
+
+function AddCashAccountDialog({ onSuccess }: { onSuccess: () => void }) {
+    const [open, setOpen] = useState(false);
+    const [loading, setLoading] = useState(false);
+    const { toast } = useToast();
+
+    const [formData, setFormData] = useState({
+        name: '',
+        currency: 'LYD' as 'LYD' | 'USD',
+        description: ''
+    });
+
+    const handleSubmit = async (e: React.FormEvent) => {
+        e.preventDefault();
+        setLoading(true);
+        try {
+            const account = await createCashAccount(formData);
+            toast({ title: 'تم إضافة الخزينة النقدية بنجاح' });
+            setOpen(false);
+            setFormData({ name: '', currency: 'LYD', description: '' });
+            onSuccess();
+        } catch (error: any) {
+            toast({ title: 'خطأ', description: error.message, variant: 'destructive' });
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    return (
+        <Dialog open={open} onOpenChange={setOpen}>
+            <DialogTrigger asChild>
+                <Button className="gap-2 bg-emerald-600 hover:bg-emerald-700">
+                    <Plus className="w-4 h-4" />
+                    إضافة خزينة نقدية
+                </Button>
+            </DialogTrigger>
+            <DialogContent>
+                <DialogHeader>
+                    <DialogTitle>إضافة خزينة نقدية جديدة</DialogTitle>
+                </DialogHeader>
+                <form onSubmit={handleSubmit} className="space-y-4 py-4">
+                    <div className="space-y-2">
+                        <Label>اسم الخزينة</Label>
+                        <Input
+                            required
+                            value={formData.name}
+                            onChange={e => setFormData({ ...formData, name: e.target.value })}
+                            placeholder="مثال: الخزينة الرئيسية"
+                        />
+                    </div>
+                    <div className="space-y-2">
+                        <Label>العملة</Label>
+                        <Select value={formData.currency} onValueChange={(v: any) => setFormData({ ...formData, currency: v })}>
+                            <SelectTrigger><SelectValue /></SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value="LYD">دينار ليبي</SelectItem>
+                                <SelectItem value="USD">دولار</SelectItem>
+                            </SelectContent>
+                        </Select>
+                    </div>
+                    <div className="space-y-2">
+                        <Label>ملاحظات (اختياري)</Label>
+                        <Input
+                            value={formData.description}
+                            onChange={e => setFormData({ ...formData, description: e.target.value })}
+                            placeholder="ملاحظات إضافية"
+                        />
+                    </div>
+                    <DialogFooter>
+                        <Button type="submit" disabled={loading}>
+                            {loading ? 'جاري الحفظ...' : 'حفظ'}
+                        </Button>
+                    </DialogFooter>
+                </form>
+            </DialogContent>
+        </Dialog>
     );
 }
