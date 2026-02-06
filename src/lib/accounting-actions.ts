@@ -244,6 +244,99 @@ export async function createEntity(data: {
     return newAccount;
 }
 
+/**
+ * Update Customer or Supplier
+ */
+export async function updateEntity(id: string, data: {
+    name_ar: string;
+    name_en?: string;
+    phone?: string;
+    currency?: 'LYD' | 'USD';
+}) {
+    try {
+        const { data: account, error } = await supabaseAdmin
+            .from('accounts')
+            .update({
+                name_ar: data.name_ar,
+                name_en: data.name_en || data.name_ar,
+                currency: data.currency,
+                description: data.phone ? `Phone: ${data.phone}` : undefined
+            })
+            .eq('id', id)
+            .select()
+            .single();
+
+        if (error) return { success: false, error: error.message };
+        return { success: true, data: account };
+    } catch (error: any) {
+        return { success: false, error: error.message };
+    }
+}
+
+/**
+ * Delete Customer or Supplier
+ * Validates no related invoices, receipts, or payments exist
+ */
+export async function deleteEntity(id: string, type: 'customer' | 'supplier') {
+    try {
+        // Check for journal entries
+        const { data: journalLines } = await supabaseAdmin
+            .from('journal_entry_lines')
+            .select('id')
+            .eq('account_id', id)
+            .limit(1);
+
+        if (journalLines && journalLines.length > 0) {
+            return {
+                success: false,
+                error: `لا يمكن حذف ${type === 'customer' ? 'عميل' : 'مورد'} مرتبط بقيود محاسبية. يرجى حذف القيود أولاً.`
+            };
+        }
+
+        // Check for sales/purchase invoices
+        const invoiceTable = type === 'customer' ? 'sales_invoices' : 'purchase_invoices';
+        const { data: invoices } = await supabaseAdmin
+            .from(invoiceTable)
+            .select('id')
+            .eq(type === 'customer' ? 'customer_id' : 'supplier_id', id)
+            .limit(1);
+
+        if (invoices && invoices.length > 0) {
+            return {
+                success: false,
+                error: `لا يمكن حذف ${type === 'customer' ? 'عميل' : 'مورد'} مرتبط بفواتير. يرجى حذف الفواتير أولاً.`
+            };
+        }
+
+        // Check for receipts/payments
+        const transactionTable = type === 'customer' ? 'receipts' : 'payments';
+        const { data: transactions } = await supabaseAdmin
+            .from(transactionTable)
+            .select('id')
+            .eq('from_account_id', id)
+            .limit(1);
+
+        if (transactions && transactions.length > 0) {
+            return {
+                success: false,
+                error: `لا يمكن حذف ${type === 'customer' ? 'عميل' : 'مورد'} مرتبط بسندات ${type === 'customer' ? 'قبض' : 'صرف'}. يرجى حذفها أولاً.`
+            };
+        }
+
+        // Delete the entity account
+        const { error } = await supabaseAdmin
+            .from('accounts')
+            .delete()
+            .eq('id', id);
+
+        if (error) return { success: false, error: error.message };
+        return { success: true };
+    } catch (error: any) {
+        return { success: false, error: error.message };
+    }
+}
+
+
 // جلب كشف حساب تفصيلي
 export async function getAccountLedger(accountId: string) {
     const { data, error } = await supabaseAdmin

@@ -8,10 +8,11 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from '@/components/ui/dialog';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
-import { Plus, Search, Users, Truck, ArrowRight, Wallet } from 'lucide-react';
-import { getEntities, createEntity } from '@/lib/accounting-actions';
+import { Plus, Search, Users, Truck, ArrowRight, Wallet, Pencil, Trash2 } from 'lucide-react';
+import { getEntities, createEntity, updateEntity, deleteEntity } from '@/lib/accounting-actions';
 import { formatCurrency } from '@/lib/utils';
 import { useToast } from '@/components/ui/use-toast';
 import { Loader2 } from 'lucide-react';
@@ -75,18 +76,18 @@ export default function CustomersSuppliersPage() {
                 </div>
 
                 <TabsContent value="customer" className="mt-6">
-                    <EntitiesList entities={filteredEntities} isLoading={isLoading} type="customer" />
+                    <EntitiesList entities={filteredEntities} isLoading={isLoading} type="customer" onRefresh={refreshData} />
                 </TabsContent>
 
                 <TabsContent value="supplier" className="mt-6">
-                    <EntitiesList entities={filteredEntities} isLoading={isLoading} type="supplier" />
+                    <EntitiesList entities={filteredEntities} isLoading={isLoading} type="supplier" onRefresh={refreshData} />
                 </TabsContent>
             </Tabs>
         </div>
     );
 }
 
-function EntitiesList({ entities, isLoading, type }: { entities: any[], isLoading: boolean, type: 'customer' | 'supplier' }) {
+function EntitiesList({ entities, isLoading, type, onRefresh }: { entities: any[], isLoading: boolean, type: 'customer' | 'supplier', onRefresh: () => void }) {
     const router = useRouter();
 
     if (isLoading) {
@@ -110,10 +111,16 @@ function EntitiesList({ entities, isLoading, type }: { entities: any[], isLoadin
             {entities.map((entity) => (
                 <Card
                     key={entity.id}
-                    className="hover:shadow-md transition-shadow cursor-pointer group border-slate-200"
-                    onClick={() => router.push(`/accounting/customers-suppliers/${entity.id}`)}
+                    className="hover:shadow-md transition-shadow group border-slate-200 relative"
                 >
-                    <CardContent className="p-5">
+                    <div className="absolute top-3 left-3 flex gap-1 z-10">
+                        <EditEntityDialog entity={entity} type={type} onSuccess={onRefresh} />
+                        <DeleteEntityDialog entity={entity} type={type} onSuccess={onRefresh} />
+                    </div>
+                    <CardContent
+                        className="p-5 cursor-pointer"
+                        onClick={() => router.push(`/accounting/customers-suppliers/${entity.id}`)}
+                    >
                         <div className="flex justify-between items-start mb-4">
                             <div className="flex items-center gap-3">
                                 <div className={`w-10 h-10 rounded-full flex items-center justify-center ${type === 'customer' ? 'bg-blue-100 text-blue-600' : 'bg-orange-100 text-orange-600'}`}>
@@ -250,5 +257,155 @@ function AddEntityDialog({ type, onSuccess }: { type: 'customer' | 'supplier', o
                 </form>
             </DialogContent>
         </Dialog>
+    );
+}
+
+function EditEntityDialog({ entity, type, onSuccess }: { entity: any, type: 'customer' | 'supplier', onSuccess: () => void }) {
+    const [open, setOpen] = useState(false);
+    const [loading, setLoading] = useState(false);
+    const { toast } = useToast();
+
+    // Extract phone from description
+    const parsePhone = (desc: string) => {
+        const phoneMatch = desc?.match(/Phone:\s*([^\s-]+)/);
+        return phoneMatch ? phoneMatch[1] : '';
+    };
+
+    const [formData, setFormData] = useState({
+        name_ar: entity.name_ar,
+        name_en: entity.name_en || '',
+        currency: entity.currency || 'LYD',
+        phone: parsePhone(entity.description)
+    });
+
+    const handleSubmit = async (e: React.FormEvent) => {
+        e.preventDefault();
+        setLoading(true);
+        try {
+            const res = await updateEntity(entity.id, formData);
+            if (res.success) {
+                toast({ title: `تم تحديث بيانات ${type === 'customer' ? 'العميل' : 'المورد'} بنجاح` });
+                setOpen(false);
+                onSuccess();
+            } else {
+                toast({ title: 'خطأ', description: res.error, variant: 'destructive' });
+            }
+        } catch (error: any) {
+            toast({ title: 'خطأ', description: error.message, variant: 'destructive' });
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    return (
+        <Dialog open={open} onOpenChange={setOpen}>
+            <DialogTrigger asChild onClick={(e) => e.stopPropagation()}>
+                <Button variant="ghost" size="sm" className="h-8 w-8 p-0 bg-white/80 hover:bg-white">
+                    <Pencil className="w-4 h-4 text-blue-600" />
+                </Button>
+            </DialogTrigger>
+            <DialogContent>
+                <DialogHeader>
+                    <DialogTitle>تعديل بيانات {type === 'customer' ? 'العميل' : 'المورد'}</DialogTitle>
+                </DialogHeader>
+                <form onSubmit={handleSubmit} className="space-y-4 py-4">
+                    <div className="space-y-2">
+                        <Label>الاسم بالعربية</Label>
+                        <Input
+                            required
+                            value={formData.name_ar}
+                            onChange={e => setFormData({ ...formData, name_ar: e.target.value })}
+                        />
+                    </div>
+                    <div className="space-y-2">
+                        <Label>الاسم بالانجليزية</Label>
+                        <Input
+                            value={formData.name_en}
+                            onChange={e => setFormData({ ...formData, name_en: e.target.value })}
+                        />
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                            <Label>العملة</Label>
+                            <Select
+                                value={formData.currency}
+                                onValueChange={(v: any) => setFormData({ ...formData, currency: v })}
+                            >
+                                <SelectTrigger>
+                                    <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="LYD">دينار ليبي (LYD)</SelectItem>
+                                    <SelectItem value="USD">دولار (USD)</SelectItem>
+                                </SelectContent>
+                            </Select>
+                        </div>
+                        <div className="space-y-2">
+                            <Label>رقم الهاتف</Label>
+                            <Input
+                                value={formData.phone}
+                                onChange={e => setFormData({ ...formData, phone: e.target.value })}
+                            />
+                        </div>
+                    </div>
+                    <DialogFooter>
+                        <Button type="submit" disabled={loading}>حفظ التعديلات</Button>
+                    </DialogFooter>
+                </form>
+            </DialogContent>
+        </Dialog>
+    );
+}
+
+function DeleteEntityDialog({ entity, type, onSuccess }: { entity: any, type: 'customer' | 'supplier', onSuccess: () => void }) {
+    const [loading, setLoading] = useState(false);
+    const { toast } = useToast();
+
+    const handleDelete = async () => {
+        setLoading(true);
+        try {
+            const res = await deleteEntity(entity.id, type);
+            if (res.success) {
+                toast({ title: `تم حذف ${type === 'customer' ? 'العميل' : 'المورد'} بنجاح` });
+                onSuccess();
+            } else {
+                toast({ title: 'خطأ', description: res.error, variant: 'destructive' });
+            }
+        } catch (error: any) {
+            toast({ title: 'خطأ', description: error.message, variant: 'destructive' });
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    return (
+        <AlertDialog>
+            <AlertDialogTrigger asChild onClick={(e) => e.stopPropagation()}>
+                <Button variant="ghost" size="sm" className="h-8 w-8 p-0 bg-white/80 hover:bg-white">
+                    <Trash2 className="w-4 h-4 text-red-600" />
+                </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+                <AlertDialogHeader>
+                    <AlertDialogTitle>هل أنت متأكد من حذف {type === 'customer' ? 'هذا العميل' : 'هذا المورد'}؟</AlertDialogTitle>
+                    <AlertDialogDescription>
+                        سيتم حذف <strong>{entity.name_ar}</strong> نهائياً.
+                        لا يمكن التراجع عن هذا الإجراء.
+                        <br /><br />
+                        <strong>ملاحظة:</strong> لا يمكن حذف {type === 'customer' ? 'عميل' : 'مورد'} مرتبط بفواتير أو سندات أو قيود محاسبية.
+                    </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                    <AlertDialogCancel>إلغاء</AlertDialogCancel>
+                    <AlertDialogAction
+                        onClick={handleDelete}
+                        disabled={loading}
+                        className="bg-red-600 hover:bg-red-700"
+                    >
+                        {loading ? 'جاري الحذف...' : 'حذف'}
+                    </AlertDialogAction>
+                </AlertDialogFooter>
+            </AlertDialogContent>
+        </AlertDialog>
     );
 }
