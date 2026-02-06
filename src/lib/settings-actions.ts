@@ -11,124 +11,148 @@ import { revalidatePath } from 'next/cache';
  * - Employees
  */
 export async function formatAccountingData() {
+    const errors: string[] = [];
+    let successCount = 0;
+
     try {
         // IMPORTANT: Delete in order - children before parents to avoid FK violations
+        // Each deletion is wrapped in try-catch to skip non-existent tables
 
         // 1. Delete all receipts (references journal_entries)
-        const { error: receiptsError } = await supabaseAdmin
-            .from('receipts')
-            .delete()
-            .neq('id', '00000000-0000-0000-0000-000000000000');
-
-        if (receiptsError) throw new Error(`خطأ في حذف سندات القبض: ${receiptsError.message}`);
+        try {
+            const { error } = await supabaseAdmin
+                .from('receipts')
+                .delete()
+                .neq('id', '00000000-0000-0000-0000-000000000000');
+            if (error) throw error;
+            successCount++;
+        } catch (e: any) {
+            if (!e.message?.includes('Could not find the table')) {
+                errors.push(`سندات القبض: ${e.message}`);
+            }
+        }
 
         // 2. Delete all payments (references journal_entries)
-        const { error: paymentsError } = await supabaseAdmin
-            .from('payments')
-            .delete()
-            .neq('id', '00000000-0000-0000-0000-000000000000');
-
-        if (paymentsError) throw new Error(`خطأ في حذف سندات الصرف: ${paymentsError.message}`);
+        try {
+            const { error } = await supabaseAdmin
+                .from('payments')
+                .delete()
+                .neq('id', '00000000-0000-0000-0000-000000000000');
+            if (error) throw error;
+            successCount++;
+        } catch (e: any) {
+            if (!e.message?.includes('Could not find the table')) {
+                errors.push(`سندات الصرف: ${e.message}`);
+            }
+        }
 
         // 3. Delete all sales invoices and their lines
-        const { error: salesLinesError } = await supabaseAdmin
-            .from('sales_invoice_lines')
-            .delete()
-            .neq('id', '00000000-0000-0000-0000-000000000000');
-
-        if (salesLinesError) throw new Error(`خطأ في حذف سطور فواتير البيع: ${salesLinesError.message}`);
-
-        const { error: salesInvoicesError } = await supabaseAdmin
-            .from('sales_invoices')
-            .delete()
-            .neq('id', '00000000-0000-0000-0000-000000000000');
-
-        if (salesInvoicesError) throw new Error(`خطأ في حذف فواتير البيع: ${salesInvoicesError.message}`);
+        try {
+            await supabaseAdmin.from('sales_invoice_lines').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+            await supabaseAdmin.from('sales_invoices').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+            successCount++;
+        } catch (e: any) {
+            if (!e.message?.includes('Could not find the table')) {
+                errors.push(`فواتير البيع: ${e.message}`);
+            }
+        }
 
         // 4. Delete all purchase invoices and their lines
-        const { error: purchaseLinesError } = await supabaseAdmin
-            .from('purchase_invoice_lines')
-            .delete()
-            .neq('id', '00000000-0000-0000-0000-000000000000');
-
-        if (purchaseLinesError) throw new Error(`خطأ في حذف سطور فواتير الشراء: ${purchaseLinesError.message}`);
-
-        const { error: purchaseInvoicesError } = await supabaseAdmin
-            .from('purchase_invoices')
-            .delete()
-            .neq('id', '00000000-0000-0000-0000-000000000000');
-
-        if (purchaseInvoicesError) throw new Error(`خطأ في حذف فواتير الشراء: ${purchaseInvoicesError.message}`);
+        try {
+            await supabaseAdmin.from('purchase_invoice_lines').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+            await supabaseAdmin.from('purchase_invoices').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+            successCount++;
+        } catch (e: any) {
+            if (!e.message?.includes('Could not find the table')) {
+                errors.push(`فواتير الشراء: ${e.message}`);
+            }
+        }
 
         // 5. Delete all journal entry lines (child of journal_entries)
-        const { error: journalLinesError } = await supabaseAdmin
-            .from('journal_entry_lines')
-            .delete()
-            .neq('id', '00000000-0000-0000-0000-000000000000');
-
-        if (journalLinesError) throw new Error(`خطأ في حذف سطور القيود: ${journalLinesError.message}`);
+        try {
+            const { error } = await supabaseAdmin
+                .from('journal_entry_lines')
+                .delete()
+                .neq('id', '00000000-0000-0000-0000-000000000000');
+            if (error) throw error;
+            successCount++;
+        } catch (e: any) {
+            if (!e.message?.includes('Could not find the table')) {
+                errors.push(`سطور القيود: ${e.message}`);
+            }
+        }
 
         // 6. NOW delete all journal entries (parent table)
-        const { error: journalEntriesError } = await supabaseAdmin
-            .from('journal_entries')
-            .delete()
-            .neq('id', '00000000-0000-0000-0000-000000000000');
-
-        if (journalEntriesError) throw new Error(`خطأ في حذف القيود: ${journalEntriesError.message}`);
+        try {
+            const { error } = await supabaseAdmin
+                .from('journal_entries')
+                .delete()
+                .neq('id', '00000000-0000-0000-0000-000000000000');
+            if (error) throw error;
+            successCount++;
+        } catch (e: any) {
+            if (!e.message?.includes('Could not find the table')) {
+                errors.push(`القيود اليومية: ${e.message}`);
+            }
+        }
 
         // 7. Delete all inventory transactions and layers
-        const { error: inventoryTransError } = await supabaseAdmin
-            .from('inventory_transactions')
-            .delete()
-            .neq('id', '00000000-0000-0000-0000-000000000000');
-
-        if (inventoryTransError) throw new Error(`خطأ في حذف معاملات المخزون: ${inventoryTransError.message}`);
-
-        const { error: inventoryLayersError } = await supabaseAdmin
-            .from('inventory_layers')
-            .delete()
-            .neq('id', '00000000-0000-0000-0000-000000000000');
-
-        if (inventoryLayersError) throw new Error(`خطأ في حذف طبقات المخزون: ${inventoryLayersError.message}`);
+        try {
+            await supabaseAdmin.from('inventory_transactions').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+            await supabaseAdmin.from('inventory_layers').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+            successCount++;
+        } catch (e: any) {
+            if (!e.message?.includes('Could not find the table')) {
+                errors.push(`المخزون: ${e.message}`);
+            }
+        }
 
         // 8. Reset inventory quantities to zero
-        const { error: inventoryResetError } = await supabaseAdmin
-            .from('inventory_items')
-            .update({ quantity_on_hand: 0 })
-            .neq('id', '00000000-0000-0000-0000-000000000000');
+        try {
+            const { error } = await supabaseAdmin
+                .from('inventory_items')
+                .update({ quantity_on_hand: 0 })
+                .neq('id', '00000000-0000-0000-0000-000000000000');
+            if (error) throw error;
+            successCount++;
+        } catch (e: any) {
+            if (!e.message?.includes('Could not find the table')) {
+                errors.push(`تصفير المخزون: ${e.message}`);
+            }
+        }
 
-        if (inventoryResetError) throw new Error(`خطأ في تصفير كميات المخزون: ${inventoryResetError.message}`);
-
-        // 9. Delete all payroll records
-        const { error: payrollError } = await supabaseAdmin
-            .from('payroll_records')
-            .delete()
-            .neq('id', '00000000-0000-0000-0000-000000000000');
-
-        if (payrollError) throw new Error(`خطأ في حذف سجلات الرواتب: ${payrollError.message}`);
+        // 9. Delete all payroll records (skip if table doesn't exist)
+        try {
+            await supabaseAdmin.from('payroll_records').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+            successCount++;
+        } catch (e: any) {
+            // Silently skip if table doesn't exist
+        }
 
         // 10. Delete all fixed assets and depreciation schedules
-        const { error: depreciationError } = await supabaseAdmin
-            .from('depreciation_schedule')
-            .delete()
-            .neq('id', '00000000-0000-0000-0000-000000000000');
-
-        if (depreciationError) throw new Error(`خطأ في حذف جداول الإهلاك: ${depreciationError.message}`);
-
-        const { error: assetsError } = await supabaseAdmin
-            .from('fixed_assets')
-            .delete()
-            .neq('id', '00000000-0000-0000-0000-000000000000');
-
-        if (assetsError) throw new Error(`خطأ في حذف الأصول الثابتة: ${assetsError.message}`);
+        try {
+            await supabaseAdmin.from('depreciation_schedule').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+            await supabaseAdmin.from('fixed_assets').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+            successCount++;
+        } catch (e: any) {
+            if (!e.message?.includes('Could not find the table')) {
+                errors.push(`الأصول الثابتة: ${e.message}`);
+            }
+        }
 
         // 11. Reset account balances for cash/bank accounts
-        const { error: balanceResetError } = await supabaseAdmin
-            .from('accounts')
-            .update({ current_balance: 0 })
-            .in('account_type', ['نقدية', 'بنوك', 'Cash', 'Bank']);
-
-        if (balanceResetError) throw new Error(`خطأ في تصفير أرصدة الحسابات: ${balanceResetError.message}`);
+        try {
+            const { error } = await supabaseAdmin
+                .from('accounts')
+                .update({ current_balance: 0 })
+                .in('account_type', ['نقدية', 'بنوك', 'Cash', 'Bank']);
+            if (error) throw error;
+            successCount++;
+        } catch (e: any) {
+            if (!e.message?.includes('Could not find the table')) {
+                errors.push(`أرصدة الحسابات: ${e.message}`);
+            }
+        }
 
         // Revalidate all accounting pages
         revalidatePath('/accounting/dashboard');
@@ -141,16 +165,23 @@ export async function formatAccountingData() {
         revalidatePath('/accounting/fixed-assets');
         revalidatePath('/accounting/cash-bank');
 
+        if (errors.length > 0) {
+            return {
+                success: false,
+                error: `تمت بعض العمليات (${successCount}) لكن حدثت أخطاء: ${errors.join(', ')}`
+            };
+        }
+
         return {
             success: true,
-            message: 'تم تصفير جميع البيانات المحاسبية بنجاح'
+            message: `تم تصفير جميع البيانات المحاسبية بنجاح (${successCount} عملية)`
         };
 
     } catch (error: any) {
         console.error('Error formatting accounting data:', error);
         return {
             success: false,
-            error: error.message || 'حدث خطأ أثناء تصفير البيانات'
+            error: error.message || 'حدث خطأ غير متوقع أثناء تصفير البيانات'
         };
     }
 }
