@@ -18,8 +18,23 @@ export async function formatAccountingData() {
         // IMPORTANT: Delete in order - children before parents to avoid FK violations
         // Each deletion is wrapped in try-catch to skip non-existent tables
 
-        // 1. Delete all receipts (references journal_entries)
+        // 0. Delete account_transactions (tracks all account movements)
         try {
+            const { error } = await supabaseAdmin
+                .from('account_transactions')
+                .delete()
+                .neq('id', '00000000-0000-0000-0000-000000000000');
+            if (error) throw error;
+            successCount++;
+        } catch (e: any) {
+            if (!e.message?.includes('Could not find the table')) {
+                errors.push(`معاملات الحسابات: ${e.message}`);
+            }
+        }
+
+        // 1. Delete receipt lines first, then receipts (references journal_entries)
+        try {
+            await supabaseAdmin.from('receipt_lines').delete().neq('id', '00000000-0000-0000-0000-000000000000');
             const { error } = await supabaseAdmin
                 .from('receipts')
                 .delete()
@@ -32,8 +47,9 @@ export async function formatAccountingData() {
             }
         }
 
-        // 2. Delete all payments (references journal_entries)
+        // 2. Delete payment lines first, then payments (references journal_entries)
         try {
+            await supabaseAdmin.from('payment_lines').delete().neq('id', '00000000-0000-0000-0000-000000000000');
             const { error } = await supabaseAdmin
                 .from('payments')
                 .delete()
