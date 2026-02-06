@@ -97,24 +97,10 @@ function JournalEntriesContent() {
                                         </TableCell>
                                         <TableCell className="text-center">
                                             <div className="flex items-center justify-center gap-1">
-                                                {(!entry.reference_type || entry.reference_type === 'manual') ? (
-                                                    <>
-                                                        <Button
-                                                            variant="ghost"
-                                                            size="sm"
-                                                            className="h-8 w-8 p-0"
-                                                            onClick={() => router.push(`/accounting/journal-entries/${entry.id}/edit`)}
-                                                        >
-                                                            <Pencil className="w-4 h-4 text-blue-600" />
-                                                        </Button>
-                                                        <DeleteJournalEntryButton
-                                                            entry={entry}
-                                                            onSuccess={loadData}
-                                                        />
-                                                    </>
-                                                ) : (
-                                                    <span className="text-xs text-muted-foreground">مرتبط</span>
-                                                )}
+                                                <DeleteJournalEntryButton
+                                                    entry={entry}
+                                                    onSuccess={loadData}
+                                                />
                                             </div>
                                         </TableCell>
                                     </TableRow>
@@ -149,6 +135,14 @@ function DeleteJournalEntryButton({ entry, onSuccess }: { entry: any; onSuccess:
         }
     };
 
+    const hasReference = entry.reference_type && entry.reference_type !== 'manual';
+    const referenceTypeAr = {
+        'receipt': 'سند قبض',
+        'payment': 'سند صرف',
+        'sales_invoice': 'فاتورة بيع',
+        'purchase_invoice': 'فاتورة شراء'
+    }[entry.reference_type] || entry.reference_type;
+
     return (
         <AlertDialog>
             <AlertDialogTrigger asChild>
@@ -158,15 +152,40 @@ function DeleteJournalEntryButton({ entry, onSuccess }: { entry: any; onSuccess:
             </AlertDialogTrigger>
             <AlertDialogContent>
                 <AlertDialogHeader>
-                    <AlertDialogTitle>حذف القيد اليومي؟</AlertDialogTitle>
-                    <AlertDialogDescription>
-                        هل أنت متأكد من حذف القيد <strong>#{entry.entry_number}</strong>؟
-                        <br /><br />
-                        <strong className="text-slate-900">{entry.description}</strong>
-                        <br />
-                        المبلغ: <strong>{formatCurrency(entry.total_debit || 0)}</strong>
-                        <br /><br />
-                        <strong className="text-red-600">تحذير:</strong> سيؤثر هذا على أرصدة الحسابات المرتبطة ولا يمكن التراجع.
+                    <AlertDialogTitle className="text-red-600">⚠️ حذف القيد اليومي - إجراء خطير</AlertDialogTitle>
+                    <AlertDialogDescription className="space-y-3">
+                        <div>
+                            <strong>القيد:</strong> #{entry.entry_number}
+                            <br />
+                            <strong>الوصف:</strong> {entry.description}
+                            <br />
+                            <strong>المبلغ:</strong> {formatCurrency(entry.total_debit || 0)}
+                        </div>
+
+                        {hasReference && (
+                            <div className="bg-red-50 border border-red-200 p-3 rounded-md">
+                                <p className="text-red-700 font-bold">⚠️ تحذير شديد الأهمية:</p>
+                                <p className="text-red-600 text-sm mt-1">
+                                    هذا القيد مرتبط بـ <strong>{referenceTypeAr}</strong>
+                                    <br />
+                                    سيتم حذف <strong>المستند الأصلي</strong> مع القيد!
+                                </p>
+                            </div>
+                        )}
+
+                        <div className="bg-orange-50 border border-orange-200 p-3 rounded-md text-sm">
+                            <p className="text-orange-800">سيؤدي الحذف إلى:</p>
+                            <ul className="list-disc list-inside text-orange-700 mt-1 space-y-1">
+                                {hasReference && <li>حذف {referenceTypeAr} المرتبط</li>}
+                                <li>حذف جميع أسطر القيد</li>
+                                <li>تحديث أرصدة الحسابات</li>
+                                <li><strong>لا يمكن التراجع عن هذا الإجراء!</strong></li>
+                            </ul>
+                        </div>
+
+                        <p className="text-slate-600 font-bold">
+                            هل أنت متأكد تماماً من المتابعة؟
+                        </p>
                     </AlertDialogDescription>
                 </AlertDialogHeader>
                 <AlertDialogFooter>
@@ -176,7 +195,7 @@ function DeleteJournalEntryButton({ entry, onSuccess }: { entry: any; onSuccess:
                         disabled={loading}
                         className="bg-red-600 hover:bg-red-700"
                     >
-                        {loading ? 'جاري الحذف...' : 'حذف'}
+                        {loading ? 'جاري الحذف...' : 'نعم، احذف نهائياً'}
                     </AlertDialogAction>
                 </AlertDialogFooter>
             </AlertDialogContent>

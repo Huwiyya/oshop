@@ -376,28 +376,68 @@ export async function getAccountDetails(accountId: string) {
 }
 
 /**
- * Delete Manual Journal Entry (Only for entries without reference documents)
- * This prevents accidental deletion of system-generated entries from receipts/payments/invoices
+ * Delete Journal Entry with Cascade Delete
+ * This will delete the journal entry AND all referenced documents (receipts, payments, invoices)
+ * USE WITH EXTREME CAUTION - This is irreversible!
  */
 export async function deleteManualJournalEntry(journalEntryId: string) {
     try {
-        // 1. Check if this is a manual entry (no reference)
+        // 1. Get journal entry details
         const { data: entry, error: fetchError } = await supabaseAdmin
             .from('journal_entries')
-            .select('reference_type, reference_id')
+            .select('reference_type, reference_id, entry_number')
             .eq('id', journalEntryId)
             .single();
 
         if (fetchError) return { success: false, error: fetchError.message };
 
-        if (entry.reference_type || entry.reference_id) {
-            return {
-                success: false,
-                error: 'لا يمكن حذف قيد مرتبط بمستند (سند قبض/صرف أو فاتورة). يجب حذف المستند الأصلي.'
-            };
+        // 2. Delete referenced document if exists (CASCADE DELETE)
+        if (entry.reference_type && entry.reference_id) {
+            let deleteError = null;
+
+            switch (entry.reference_type) {
+                case 'receipt':
+                    const { error: receiptError } = await supabaseAdmin
+                        .from('receipts')
+                        .delete()
+                        .eq('id', entry.reference_id);
+                    deleteError = receiptError;
+                    break;
+
+                case 'payment':
+                    const { error: paymentError } = await supabaseAdmin
+                        .from('payments')
+                        .delete()
+                        .eq('id', entry.reference_id);
+                    deleteError = paymentError;
+                    break;
+
+                case 'sales_invoice':
+                    const { error: salesError } = await supabaseAdmin
+                        .from('sales_invoices')
+                        .delete()
+                        .eq('id', entry.reference_id);
+                    deleteError = salesError;
+                    break;
+
+                case 'purchase_invoice':
+                    const { error: purchaseError } = await supabaseAdmin
+                        .from('purchase_invoices')
+                        .delete()
+                        .eq('id', entry.reference_id);
+                    deleteError = purchaseError;
+                    break;
+            }
+
+            if (deleteError) {
+                return {
+                    success: false,
+                    error: `فشل حذف المستند المرتبط (${entry.reference_type}): ${deleteError.message}`
+                };
+            }
         }
 
-        // 2. Delete journal entry lines first
+        // 3. Delete journal entry lines
         const { error: linesError } = await supabaseAdmin
             .from('journal_entry_lines')
             .delete()
@@ -405,7 +445,7 @@ export async function deleteManualJournalEntry(journalEntryId: string) {
 
         if (linesError) return { success: false, error: linesError.message };
 
-        // 3. Delete journal entry
+        // 4. Delete journal entry
         const { error: entryError } = await supabaseAdmin
             .from('journal_entries')
             .delete()
@@ -418,6 +458,7 @@ export async function deleteManualJournalEntry(journalEntryId: string) {
         return { success: false, error: error.message };
     }
 }
+
 
 
 // --- Bank Accounts & Cash Accounts Management ---
