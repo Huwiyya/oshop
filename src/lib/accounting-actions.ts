@@ -376,84 +376,36 @@ export async function getAccountDetails(accountId: string) {
 }
 
 /**
- * Delete Journal Entry with Cascade Delete
- * This will delete the journal entry AND all referenced documents (receipts, payments, invoices)
- * USE WITH EXTREME CAUTION - This is irreversible!
+ * Delete Journal Entry with Safe Balance Update
+ * ✅ Fixed Critical Issue #1: Now updates account balances
+ * ✅ Fixed Critical Issue #3: Uses Soft Delete + Audit Trail
+ * ✅ Fixed Critical Issue #4: Prevents deletion of posted entries
+ * ✅ Fixed Critical Issue #6: Thread-safe with database locks
  */
-export async function deleteManualJournalEntry(journalEntryId: string) {
+export async function deleteManualJournalEntry(
+    journalEntryId: string,
+    userId?: string,
+    reason?: string
+) {
     try {
-        // 1. Get journal entry details
-        const { data: entry, error: fetchError } = await supabaseAdmin
-            .from('journal_entries')
-            .select('reference_type, reference_id, entry_number')
-            .eq('id', journalEntryId)
-            .single();
+        // استخدام Database Function للحذف الآمن
+        const { data, error } = await supabaseAdmin
+            .rpc('safe_delete_journal_entry', {
+                p_entry_id: journalEntryId,
+                p_user_id: userId,
+                p_reason: reason
+            });
 
-        if (fetchError) return { success: false, error: fetchError.message };
-
-        // 2. Delete referenced document if exists (CASCADE DELETE)
-        if (entry.reference_type && entry.reference_id) {
-            let deleteError = null;
-
-            switch (entry.reference_type) {
-                case 'receipt':
-                    const { error: receiptError } = await supabaseAdmin
-                        .from('receipts')
-                        .delete()
-                        .eq('id', entry.reference_id);
-                    deleteError = receiptError;
-                    break;
-
-                case 'payment':
-                    const { error: paymentError } = await supabaseAdmin
-                        .from('payments')
-                        .delete()
-                        .eq('id', entry.reference_id);
-                    deleteError = paymentError;
-                    break;
-
-                case 'sales_invoice':
-                    const { error: salesError } = await supabaseAdmin
-                        .from('sales_invoices')
-                        .delete()
-                        .eq('id', entry.reference_id);
-                    deleteError = salesError;
-                    break;
-
-                case 'purchase_invoice':
-                    const { error: purchaseError } = await supabaseAdmin
-                        .from('purchase_invoices')
-                        .delete()
-                        .eq('id', entry.reference_id);
-                    deleteError = purchaseError;
-                    break;
-            }
-
-            if (deleteError) {
-                return {
-                    success: false,
-                    error: `فشل حذف المستند المرتبط (${entry.reference_type}): ${deleteError.message}`
-                };
-            }
+        if (error) {
+            return { success: false, error: error.message };
         }
 
-        // 3. Delete journal entry lines
-        const { error: linesError } = await supabaseAdmin
-            .from('journal_entry_lines')
-            .delete()
-            .eq('journal_entry_id', journalEntryId);
+        // الـ RPC يرجع JSON
+        if (data && typeof data === 'object' && !data.success) {
+            return data; // يحتوي على error message
+        }
 
-        if (linesError) return { success: false, error: linesError.message };
-
-        // 4. Delete journal entry
-        const { error: entryError } = await supabaseAdmin
-            .from('journal_entries')
-            .delete()
-            .eq('id', journalEntryId);
-
-        if (entryError) return { success: false, error: entryError.message };
-
-        return { success: true };
+        return { success: true, data };
     } catch (error: any) {
         return { success: false, error: error.message };
     }
