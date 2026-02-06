@@ -1,16 +1,46 @@
-import React from 'react';
-import { getAccountDetails, getAccountLedger } from '@/lib/accounting-actions';
+'use client';
+
+import React, { useState, useEffect } from 'react';
+import { getAccountDetails, getAccountLedger, deleteManualJournalEntry } from '@/lib/accounting-actions';
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { formatCurrency } from '@/lib/utils';
 import Link from 'next/link';
-import { ArrowRight } from 'lucide-react';
+import { ArrowRight, Trash2, ExternalLink } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
+import { useToast } from '@/components/ui/use-toast';
+import { useParams } from 'next/navigation';
 
-export default async function AccountDetailsPage({ params }: { params: Promise<{ id: string }> }) {
-    const { id } = await params;
-    const account = await getAccountDetails(id);
-    const ledger = await getAccountLedger(id);
+export default function AccountDetailsPage() {
+    const params = useParams();
+    const id = params.id as string;
+    const [account, setAccount] = useState<any>(null);
+    const [ledger, setLedger] = useState<any[]>([]);
+    const [loading, setLoading] = useState(true);
+    const { toast } = useToast();
+
+    const loadData = async () => {
+        setLoading(true);
+        try {
+            const accountData = await getAccountDetails(id);
+            const ledgerData = await getAccountLedger(id);
+            setAccount(accountData);
+            setLedger(ledgerData || []);
+        } catch (error) {
+            toast({ title: 'خطأ', description: 'فشل تحميل البيانات', variant: 'destructive' });
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    useEffect(() => {
+        loadData();
+    }, [id]);
+
+    if (loading) {
+        return <div className="p-8 text-center">جاري التحميل...</div>;
+    }
 
     if (!account) {
         return (
@@ -65,6 +95,7 @@ export default async function AccountDetailsPage({ params }: { params: Promise<{
                                 <TableHead>البيان</TableHead>
                                 <TableHead className="text-left">مدين (Debit)</TableHead>
                                 <TableHead className="text-left">دائن (Credit)</TableHead>
+                                <TableHead className="text-center">إجراءات</TableHead>
                             </TableRow>
                         </TableHeader>
                         <TableBody>
@@ -78,7 +109,7 @@ export default async function AccountDetailsPage({ params }: { params: Promise<{
                                                 <span>{entry.description || entry.journal_entries?.description}</span>
                                                 {entry.journal_entries?.reference_type && (
                                                     <span className="text-xs text-muted-foreground">
-                                                        Ref: {entry.journal_entries?.reference_type} #{entry.journal_entries?.reference_id}
+                                                        {getReferenceBadge(entry.journal_entries?.reference_type, entry.journal_entries?.reference_id)}
                                                     </span>
                                                 )}
                                             </div>
@@ -89,11 +120,22 @@ export default async function AccountDetailsPage({ params }: { params: Promise<{
                                         <TableCell className="text-left font-mono text-red-600 font-medium">
                                             {entry.credit > 0 ? formatCurrency(entry.credit) : '-'}
                                         </TableCell>
+                                        <TableCell className="text-center">
+                                            {!entry.journal_entries?.reference_type && !entry.journal_entries?.reference_id ? (
+                                                <DeleteJournalEntryButton
+                                                    journalEntryId={entry.journal_entry_id}
+                                                    entryNumber={entry.journal_entries?.entry_number}
+                                                    onSuccess={loadData}
+                                                />
+                                            ) : (
+                                                <span className="text-xs text-muted-foreground">مرتبط بمستند</span>
+                                            )}
+                                        </TableCell>
                                     </TableRow>
                                 ))
                             ) : (
                                 <TableRow>
-                                    <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
+                                    <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
                                         لا توجد حركات مسجلة حتى الآن
                                     </TableCell>
                                 </TableRow>
@@ -103,5 +145,74 @@ export default async function AccountDetailsPage({ params }: { params: Promise<{
                 </CardContent>
             </Card>
         </div>
+    );
+}
+
+function getReferenceBadge(referenceType: string, referenceId: string) {
+    const typeMap: Record<string, string> = {
+        'receipt': 'سند قبض',
+        'payment': 'سند صرف',
+        'sales_invoice': 'فاتورة بيع',
+        'purchase_invoice': 'فاتورة شراء'
+    };
+
+    return `${typeMap[referenceType] || referenceType} #${referenceId?.slice(0, 8)}`;
+}
+
+function DeleteJournalEntryButton({ journalEntryId, entryNumber, onSuccess }: {
+    journalEntryId: string;
+    entryNumber: string;
+    onSuccess: () => void
+}) {
+    const [loading, setLoading] = useState(false);
+    const { toast } = useToast();
+
+    const handleDelete = async () => {
+        setLoading(true);
+        try {
+            const res = await deleteManualJournalEntry(journalEntryId);
+            if (res.success) {
+                toast({ title: 'تم حذف القيد اليدوي بنجاح' });
+                onSuccess();
+            } else {
+                toast({ title: 'خطأ', description: res.error, variant: 'destructive' });
+            }
+        } catch (error: any) {
+            toast({ title: 'خطأ', description: error.message, variant: 'destructive' });
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    return (
+        <AlertDialog>
+            <AlertDialogTrigger asChild>
+                <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
+                    <Trash2 className="w-4 h-4 text-red-600" />
+                </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+                <AlertDialogHeader>
+                    <AlertDialogTitle>حذف القيد المحاسبي؟</AlertDialogTitle>
+                    <AlertDialogDescription>
+                        هل أنت متأكد من حذف القيد <strong>#{entryNumber}</strong>؟
+                        <br /><br />
+                        سيتم حذف القيد نهائياً ولا يمكن التراجع عن هذا الإجراء.
+                        <br /><br />
+                        <strong className="text-red-600">تحذير:</strong> سيؤثر هذا على أرصدة الحسابات المرتبطة.
+                    </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                    <AlertDialogCancel>إلغاء</AlertDialogCancel>
+                    <AlertDialogAction
+                        onClick={handleDelete}
+                        disabled={loading}
+                        className="bg-red-600 hover:bg-red-700"
+                    >
+                        {loading ? 'جاري الحذف...' : 'حذف'}
+                    </AlertDialogAction>
+                </AlertDialogFooter>
+            </AlertDialogContent>
+        </AlertDialog>
     );
 }

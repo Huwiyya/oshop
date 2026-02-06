@@ -375,6 +375,51 @@ export async function getAccountDetails(accountId: string) {
     return data;
 }
 
+/**
+ * Delete Manual Journal Entry (Only for entries without reference documents)
+ * This prevents accidental deletion of system-generated entries from receipts/payments/invoices
+ */
+export async function deleteManualJournalEntry(journalEntryId: string) {
+    try {
+        // 1. Check if this is a manual entry (no reference)
+        const { data: entry, error: fetchError } = await supabaseAdmin
+            .from('journal_entries')
+            .select('reference_type, reference_id')
+            .eq('id', journalEntryId)
+            .single();
+
+        if (fetchError) return { success: false, error: fetchError.message };
+
+        if (entry.reference_type || entry.reference_id) {
+            return {
+                success: false,
+                error: 'لا يمكن حذف قيد مرتبط بمستند (سند قبض/صرف أو فاتورة). يجب حذف المستند الأصلي.'
+            };
+        }
+
+        // 2. Delete journal entry lines first
+        const { error: linesError } = await supabaseAdmin
+            .from('journal_entry_lines')
+            .delete()
+            .eq('journal_entry_id', journalEntryId);
+
+        if (linesError) return { success: false, error: linesError.message };
+
+        // 3. Delete journal entry
+        const { error: entryError } = await supabaseAdmin
+            .from('journal_entries')
+            .delete()
+            .eq('id', journalEntryId);
+
+        if (entryError) return { success: false, error: entryError.message };
+
+        return { success: true };
+    } catch (error: any) {
+        return { success: false, error: error.message };
+    }
+}
+
+
 // --- Bank Accounts & Cash Accounts Management ---
 
 export async function getBankAccounts() {
