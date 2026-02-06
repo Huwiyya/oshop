@@ -12,22 +12,25 @@ import { revalidatePath } from 'next/cache';
  */
 export async function formatAccountingData() {
     try {
-        // 1. Delete all journal entries and their lines
-        const { error: journalLinesError } = await supabaseAdmin
-            .from('journal_entry_lines')
+        // IMPORTANT: Delete in order - children before parents to avoid FK violations
+
+        // 1. Delete all receipts (references journal_entries)
+        const { error: receiptsError } = await supabaseAdmin
+            .from('receipts')
             .delete()
-            .neq('id', '00000000-0000-0000-0000-000000000000'); // Delete all
+            .neq('id', '00000000-0000-0000-0000-000000000000');
 
-        if (journalLinesError) throw new Error(`خطأ في حذف سطور القيود: ${journalLinesError.message}`);
+        if (receiptsError) throw new Error(`خطأ في حذف سندات القبض: ${receiptsError.message}`);
 
-        const { error: journalEntriesError } = await supabaseAdmin
-            .from('journal_entries')
+        // 2. Delete all payments (references journal_entries)
+        const { error: paymentsError } = await supabaseAdmin
+            .from('payments')
             .delete()
-            .neq('id', '00000000-0000-0000-0000-000000000000'); // Delete all
+            .neq('id', '00000000-0000-0000-0000-000000000000');
 
-        if (journalEntriesError) throw new Error(`خطأ في حذف القيود: ${journalEntriesError.message}`);
+        if (paymentsError) throw new Error(`خطأ في حذف سندات الصرف: ${paymentsError.message}`);
 
-        // 2. Delete all sales invoices and their lines
+        // 3. Delete all sales invoices and their lines
         const { error: salesLinesError } = await supabaseAdmin
             .from('sales_invoice_lines')
             .delete()
@@ -42,7 +45,7 @@ export async function formatAccountingData() {
 
         if (salesInvoicesError) throw new Error(`خطأ في حذف فواتير البيع: ${salesInvoicesError.message}`);
 
-        // 3. Delete all purchase invoices and their lines
+        // 4. Delete all purchase invoices and their lines
         const { error: purchaseLinesError } = await supabaseAdmin
             .from('purchase_invoice_lines')
             .delete()
@@ -57,23 +60,23 @@ export async function formatAccountingData() {
 
         if (purchaseInvoicesError) throw new Error(`خطأ في حذف فواتير الشراء: ${purchaseInvoicesError.message}`);
 
-        // 4. Delete all receipts
-        const { error: receiptsError } = await supabaseAdmin
-            .from('receipts')
+        // 5. Delete all journal entry lines (child of journal_entries)
+        const { error: journalLinesError } = await supabaseAdmin
+            .from('journal_entry_lines')
             .delete()
             .neq('id', '00000000-0000-0000-0000-000000000000');
 
-        if (receiptsError) throw new Error(`خطأ في حذف سندات القبض: ${receiptsError.message}`);
+        if (journalLinesError) throw new Error(`خطأ في حذف سطور القيود: ${journalLinesError.message}`);
 
-        // 5. Delete all payments
-        const { error: paymentsError } = await supabaseAdmin
-            .from('payments')
+        // 6. NOW delete all journal entries (parent table)
+        const { error: journalEntriesError } = await supabaseAdmin
+            .from('journal_entries')
             .delete()
             .neq('id', '00000000-0000-0000-0000-000000000000');
 
-        if (paymentsError) throw new Error(`خطأ في حذف سندات الصرف: ${paymentsError.message}`);
+        if (journalEntriesError) throw new Error(`خطأ في حذف القيود: ${journalEntriesError.message}`);
 
-        // 6. Delete all inventory transactions and layers
+        // 7. Delete all inventory transactions and layers
         const { error: inventoryTransError } = await supabaseAdmin
             .from('inventory_transactions')
             .delete()
@@ -88,7 +91,7 @@ export async function formatAccountingData() {
 
         if (inventoryLayersError) throw new Error(`خطأ في حذف طبقات المخزون: ${inventoryLayersError.message}`);
 
-        // 7. Reset inventory quantities to zero
+        // 8. Reset inventory quantities to zero
         const { error: inventoryResetError } = await supabaseAdmin
             .from('inventory_items')
             .update({ quantity_on_hand: 0 })
@@ -96,7 +99,7 @@ export async function formatAccountingData() {
 
         if (inventoryResetError) throw new Error(`خطأ في تصفير كميات المخزون: ${inventoryResetError.message}`);
 
-        // 8. Delete all payroll records
+        // 9. Delete all payroll records
         const { error: payrollError } = await supabaseAdmin
             .from('payroll_records')
             .delete()
@@ -104,7 +107,7 @@ export async function formatAccountingData() {
 
         if (payrollError) throw new Error(`خطأ في حذف سجلات الرواتب: ${payrollError.message}`);
 
-        // 9. Delete all fixed assets and depreciation schedules
+        // 10. Delete all fixed assets and depreciation schedules
         const { error: depreciationError } = await supabaseAdmin
             .from('depreciation_schedule')
             .delete()
@@ -119,7 +122,7 @@ export async function formatAccountingData() {
 
         if (assetsError) throw new Error(`خطأ في حذف الأصول الثابتة: ${assetsError.message}`);
 
-        // 10. Reset account balances for cash/bank accounts
+        // 11. Reset account balances for cash/bank accounts
         const { error: balanceResetError } = await supabaseAdmin
             .from('accounts')
             .update({ current_balance: 0 })
