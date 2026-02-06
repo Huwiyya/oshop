@@ -1,7 +1,6 @@
-
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -12,7 +11,7 @@ import { formatCurrency } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
 import { ListFilter } from '@/components/accounting/list-filter';
 
-export default function JournalEntriesPage() {
+function JournalEntriesContent() {
     const router = useRouter();
     const searchParams = useSearchParams();
     const [entries, setEntries] = useState<any[]>([]);
@@ -95,5 +94,13 @@ export default function JournalEntriesPage() {
                 </CardContent>
             </Card>
         </div>
+    );
+}
+
+export default function JournalEntriesPage() {
+    return (
+        <Suspense fallback={<div className="text-center py-10">جاري التحميل...</div>}>
+            <JournalEntriesContent />
+        </Suspense>
     );
 }
