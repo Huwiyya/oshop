@@ -16,7 +16,8 @@ import {
     BarChart3,
     Menu,
     X,
-    LogOut
+    LogOut,
+    Settings
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
@@ -46,6 +47,7 @@ const sidebarItems = [
     { name: 'الأصول الثابتة', href: '/accounting/fixed-assets', icon: Building2 },
 
     { name: 'التقارير المالية', href: '/accounting/financial-reports', icon: BarChart3 },
+    { name: 'الإعدادات', href: '/accounting/settings', icon: Settings },
 ];
 
 export default function AccountingLayout({ children }: { children: React.ReactNode }) {
