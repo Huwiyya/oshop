@@ -226,3 +226,72 @@ export async function getAssetAccounts() {
     const { data } = await supabaseAdmin.from('accounts').select('*').like('account_code', '1%').order('account_code');
     return data || [];
 }
+
+/**
+ * Update Employee Account
+ */
+export async function updateEmployee(id: string, data: { name_ar: string; phone?: string; salary?: number }) {
+    try {
+        const { data: account, error } = await supabaseAdmin
+            .from('accounts')
+            .update({
+                name_ar: data.name_ar,
+                description: `Salary: ${data.salary || 0} - Phone: ${data.phone || ''}`
+            })
+            .eq('id', id)
+            .select()
+            .single();
+
+        if (error) return { success: false, error: error.message };
+        return { success: true, data: account };
+    } catch (error: any) {
+        return { success: false, error: error.message };
+    }
+}
+
+/**
+ * Delete Employee Account
+ * Validates that employee has no payroll records before deletion
+ */
+export async function deleteEmployee(id: string) {
+    try {
+        // Check if employee has payroll records/slips
+        const { data: payrollRecords } = await supabaseAdmin
+            .from('payroll_records')
+            .select('id')
+            .eq('employee_id', id)
+            .limit(1);
+
+        if (payrollRecords && payrollRecords.length > 0) {
+            return {
+                success: false,
+                error: 'لا يمكن حذف موظف مرتبط بسجلات رواتب. يرجى حذف سجلات الرواتب أولاً.'
+            };
+        }
+
+        // Check if employee has journal entries (via account_transactions or journal_entry_lines)
+        const { data: transactions } = await supabaseAdmin
+            .from('journal_entry_lines')
+            .select('id')
+            .eq('account_id', id)
+            .limit(1);
+
+        if (transactions && transactions.length > 0) {
+            return {
+                success: false,
+                error: 'لا يمكن حذف موظف مرتبط بقيود محاسبية. يرجى حذف القيود أولاً.'
+            };
+        }
+
+        // Delete the employee account
+        const { error } = await supabaseAdmin
+            .from('accounts')
+            .delete()
+            .eq('id', id);
+
+        if (error) return { success: false, error: error.message };
+        return { success: true };
+    } catch (error: any) {
+        return { success: false, error: error.message };
+    }
+}
