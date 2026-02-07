@@ -17,12 +17,14 @@ export async function GET() {
         const { data: sAcc } = await supabaseAdmin.from('accounts').insert({
             account_code: supCode, name_ar: 'مورد تعديل ' + supCode, account_type_id: liabilityType, level: 4
         }).select().single();
-        const supplierAccountId = sAcc.id;
 
         const cusCode = 'CUS-EDIT-' + Date.now().toString().slice(-4);
         const { data: cAcc } = await supabaseAdmin.from('accounts').insert({
             account_code: cusCode, name_ar: 'عميل تعديل ' + cusCode, account_type_id: assetType, level: 4
         }).select().single();
+
+        if (!sAcc || !cAcc) throw new Error('Failed to create test accounts');
+        const supplierAccountId = sAcc.id;
         const customerAccountId = cAcc.id;
 
         // Item
@@ -30,6 +32,8 @@ export async function GET() {
         const { data: newItem } = await supabaseAdmin.from('inventory_items').insert({
             name_ar: 'صنف تعديل', item_code: itemCode, quantity_on_hand: 0
         }).select().single();
+
+        if (!newItem) throw new Error('Failed to create test item');
         const itemId = newItem.id;
 
         log('Setup Complete', { itemCode, supCode });
@@ -71,12 +75,12 @@ export async function GET() {
 
         // Check Inventory
         let { data: itemAfterPur } = await supabaseAdmin.from('inventory_items').select('quantity_on_hand').eq('id', itemId).single();
-        log('Inventory after Purchase', itemAfterPur.quantity_on_hand); // Should be 10
+        log('Inventory after Purchase', itemAfterPur?.quantity_on_hand); // Should be 10
 
         // 3. EDIT Purchase (Change Qty to 15 @ 110)
         log('Editing Purchase (Change to 15 @ 110)');
         const { data: editPur, error: editPurErr } = await supabaseAdmin.rpc('update_purchase_invoice_rpc', {
-            p_invoice_id: pur.invoice_id,
+            p_invoice_id: pur?.invoice_id,
             p_new_data: {
                 supplierId: supplierAccountId,
                 date: new Date().toISOString().split('T')[0],
@@ -88,8 +92,8 @@ export async function GET() {
 
         // Check Inventory
         let { data: itemAfterEditPur } = await supabaseAdmin.from('inventory_items').select('quantity_on_hand').eq('id', itemId).single();
-        log('Inventory after Edit Purchase', itemAfterEditPur.quantity_on_hand); // Should be 15
-        if (itemAfterEditPur.quantity_on_hand !== 15) throw new Error('Inventory mismatch after purchase edit');
+        log('Inventory after Edit Purchase', itemAfterEditPur?.quantity_on_hand); // Should be 15
+        if (itemAfterEditPur?.quantity_on_hand !== 15) throw new Error('Inventory mismatch after purchase edit');
 
         // 4. Create Sale (Qty 5)
         log('Creating Sale (5 @ 200)');
@@ -105,12 +109,12 @@ export async function GET() {
 
         // Check Inventory
         let { data: itemAfterSale } = await supabaseAdmin.from('inventory_items').select('quantity_on_hand').eq('id', itemId).single();
-        log('Inventory after Sale', itemAfterSale.quantity_on_hand); // Should be 10 (15 - 5)
+        log('Inventory after Sale', itemAfterSale?.quantity_on_hand); // Should be 10 (15 - 5)
 
         // 5. EDIT Sale (Change Qty to 3)
         log('Editing Sale (Change to 3 @ 200)');
         const { data: editSale, error: editSaleErr } = await supabaseAdmin.rpc('update_sales_invoice_rpc', {
-            p_invoice_id: sale.invoice_id,
+            p_invoice_id: sale?.invoice_id,
             p_new_data: {
                 customerId: customerAccountId,
                 date: new Date().toISOString().split('T')[0],
@@ -122,8 +126,8 @@ export async function GET() {
 
         // Check Inventory
         let { data: itemAfterEditSale } = await supabaseAdmin.from('inventory_items').select('quantity_on_hand').eq('id', itemId).single();
-        log('Inventory after Edit Sale', itemAfterEditSale.quantity_on_hand); // Should be 12 (15 - 3)
-        if (itemAfterEditSale.quantity_on_hand !== 12) throw new Error('Inventory mismatch after sale edit');
+        log('Inventory after Edit Sale', itemAfterEditSale?.quantity_on_hand); // Should be 12 (15 - 3)
+        if (itemAfterEditSale?.quantity_on_hand !== 12) throw new Error('Inventory mismatch after sale edit');
 
         report.final_status = 'Success';
         return NextResponse.json({ success: true, report });
