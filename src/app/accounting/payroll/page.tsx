@@ -1,6 +1,6 @@
 
 'use client';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Suspense } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -17,7 +17,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { AccountSelector } from '@/components/accounting/AccountSelector';
 
-export default function PayrollPage() {
+function PayrollContent() {
     const router = useRouter();
     const searchParams = useSearchParams();
     const slipId = searchParams.get('id');
@@ -277,5 +277,13 @@ export default function PayrollPage() {
                 </CardFooter>
             </Card>
         </div>
+    );
+}
+
+export default function PayrollPage() {
+    return (
+        <Suspense fallback={<div className="p-20 text-center text-slate-400">جاري التحميل...</div>}>
+            <PayrollContent />
+        </Suspense>
     );
 }
