@@ -241,7 +241,7 @@ export default function NewAssetPage() {
                                 <Label>طريقة الاستهلاك</Label>
                                 <Select
                                     value={formData.depreciation_method}
-                                    onValueChange={(v) => setFormData({ ...formData, depreciation_method: v })}
+                                    onValueChange={(v) => setFormData({ ...formData, depreciation_method: v as 'straight_line' | 'declining_balance' | 'none' })}
                                 >
                                     <SelectTrigger>
                                         <SelectValue />
