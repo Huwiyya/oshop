@@ -101,13 +101,13 @@ BEGIN
 
         -- Use defaults if not set on item
         IF inventory_account_id IS NULL THEN
-            SELECT id INTO inventory_account_id FROM accounts WHERE account_code = '1130'; -- Default Inventory
+            SELECT id INTO inventory_account_id FROM accounts WHERE account_code = '113001'; -- Default Inventory (Level 4)
         END IF;
         IF cogs_account_id IS NULL THEN
-            SELECT id INTO cogs_account_id FROM accounts WHERE account_code = '5100'; -- Default COGS
+            SELECT id INTO cogs_account_id FROM accounts WHERE account_code = '510001'; -- Default COGS (Level 4)
         END IF;
         IF revenue_account_id IS NULL THEN
-            SELECT id INTO revenue_account_id FROM accounts WHERE account_code = '4100'; -- Default Sales
+            SELECT id INTO revenue_account_id FROM accounts WHERE account_code = '410001'; -- Default Sales (Level 4)
         END IF;
 
         -- CHECK FOR SPECIFIC LAYERS (Cards)
@@ -394,7 +394,7 @@ BEGIN
     END LOOP;
 
     -- E. Create Journal Entry
-    SELECT id INTO inventory_account_id FROM accounts WHERE account_code = '1130';
+    SELECT id INTO inventory_account_id FROM accounts WHERE account_code = '113001'; -- Level 4 Inventory
     supplier_account_id := invoice_data->>'supplierId';
 
     IF inventory_account_id IS NOT NULL THEN

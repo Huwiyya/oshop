@@ -38,25 +38,25 @@ export async function createInventoryItem(data: {
     sales_account_id?: string;
     cogs_account_id?: string;
 }) {
-    // Default Inventory Account (Assets -> Inventory)
+    // Default Inventory Account (Assets -> Inventory -> General)
     const { data: inventoryAcc } = await supabaseAdmin
         .from('accounts')
         .select('id')
-        .eq('account_code', '1130')
+        .eq('account_code', '113001')
         .single();
 
-    // Default COGS Account (Expenses -> COGS)
+    // Default COGS Account (Expenses -> COGS -> General)
     const { data: cogsAcc } = await supabaseAdmin
         .from('accounts')
         .select('id')
-        .eq('account_code', '5100')
+        .eq('account_code', '510001')
         .single();
 
-    // Default Sales Account (Revenue -> Sales)
+    // Default Sales Account (Revenue -> Sales -> General)
     const { data: salesAcc } = await supabaseAdmin
         .from('accounts')
         .select('id')
-        .eq('account_code', '4100')
+        .eq('account_code', '410001')
         .single();
 
     const { data: newItem, error } = await supabaseAdmin

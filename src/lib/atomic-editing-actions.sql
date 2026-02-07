@@ -138,9 +138,9 @@ BEGIN
         FROM inventory_items i WHERE i.id = (v_item_rec->>'itemId');
 
         -- Defaults
-        IF v_inventory_account_id IS NULL THEN SELECT id INTO v_inventory_account_id FROM accounts WHERE account_code = '1130'; END IF;
-        IF v_cogs_account_id IS NULL THEN SELECT id INTO v_cogs_account_id FROM accounts WHERE account_code = '5100'; END IF;
-        IF v_revenue_account_id IS NULL THEN SELECT id INTO v_revenue_account_id FROM accounts WHERE account_code = '4100'; END IF;
+        IF v_inventory_account_id IS NULL THEN SELECT id INTO v_inventory_account_id FROM accounts WHERE account_code = '113001'; END IF;
+        IF v_cogs_account_id IS NULL THEN SELECT id INTO v_cogs_account_id FROM accounts WHERE account_code = '510001'; END IF;
+        IF v_revenue_account_id IS NULL THEN SELECT id INTO v_revenue_account_id FROM accounts WHERE account_code = '410001'; END IF;
 
         -- Iterate Layers
         FOR v_layer_rec IN 
@@ -377,7 +377,7 @@ BEGIN
     END LOOP;
 
     -- D. JEs
-    SELECT id INTO v_inventory_account_id FROM accounts WHERE account_code = '1130';
+    SELECT id INTO v_inventory_account_id FROM accounts WHERE account_code = '113001'; -- Level 4
     v_supplier_account_id := p_new_data->>'supplierId';
 
     IF v_inventory_account_id IS NOT NULL THEN

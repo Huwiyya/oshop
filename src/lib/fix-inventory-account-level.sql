@@ -49,4 +49,18 @@ BEGIN
     ELSE
         RAISE NOTICE 'Account 113001 already exists.';
     END IF;
+
+    -- 3. COGS Account (5100 -> 510001)
+    SELECT * INTO parent_rec FROM accounts WHERE account_code = '5100';
+    IF parent_rec.id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM accounts WHERE account_code = '510001') THEN
+        INSERT INTO accounts (account_code, name_ar, name_en, parent_id, level, is_parent, is_active, account_type_id, currency, created_at, updated_at) 
+        VALUES ('510001', 'تكلة بضاعة عامة', 'General COGS', parent_rec.id, 4, false, true, parent_rec.account_type_id, 'LYD', NOW(), NOW());
+    END IF;
+
+    -- 4. Sales Account (4100 -> 410001)
+    SELECT * INTO parent_rec FROM accounts WHERE account_code = '4100';
+    IF parent_rec.id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM accounts WHERE account_code = '410001') THEN
+        INSERT INTO accounts (account_code, name_ar, name_en, parent_id, level, is_parent, is_active, account_type_id, currency, created_at, updated_at) 
+        VALUES ('410001', 'مبيعات عامة', 'General Sales', parent_rec.id, 4, false, true, parent_rec.account_type_id, 'LYD', NOW(), NOW());
+    END IF;
 END $$;
