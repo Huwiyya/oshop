@@ -13,16 +13,20 @@
 -- المشكلة: يوجد entry_id و journal_entry_id (كلاهما يشير إلى نفس الجدول)
 -- الحل: سنستخدم journal_entry_id فقط ونحذف entry_id
 
+-- ⚠️ ملاحظة: إذا كان entry_id محذوف بالفعل، تخطى هذا القسم!
+-- يمكن أن يكون العمود محذوف من قبل، مما يسبب خطأ في التنفيذ
+
 -- أولاً: نسخ البيانات من entry_id إلى journal_entry_id (إذا كانت موجودة)
-UPDATE journal_entry_lines 
-SET journal_entry_id = COALESCE(journal_entry_id, entry_id) 
-WHERE journal_entry_id IS NULL AND entry_id IS NOT NULL;
+-- معلّق لأن entry_id قد يكون محذوف بالفعل في قاعدة البيانات
+-- UPDATE journal_entry_lines 
+-- SET journal_entry_id = COALESCE(journal_entry_id, entry_id) 
+-- WHERE journal_entry_id IS NULL AND entry_id IS NOT NULL;
 
 -- ثانياً: حذف الـ FOREIGN KEY constraint على entry_id
 ALTER TABLE journal_entry_lines 
 DROP CONSTRAINT IF EXISTS journal_entry_lines_entry_id_fkey;
 
--- ثالثاً: حذف العمود entry_id
+-- ثالثاً: حذف العمود entry_id (إذا كان موجود)
 ALTER TABLE journal_entry_lines 
 DROP COLUMN IF EXISTS entry_id;
 
