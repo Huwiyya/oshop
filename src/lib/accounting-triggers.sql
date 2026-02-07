@@ -150,14 +150,12 @@ BEGIN
     FOR rec IN SELECT * FROM jsonb_array_elements(p_lines)
     LOOP
         INSERT INTO journal_entry_lines (
-            entry_id,           -- Original column (Schema file)
-            journal_entry_id,   -- New column (Actual DB)
+            journal_entry_id,   -- Use only journal_entry_id (entry_id was removed)
             account_id,
             description,
             debit,
             credit
         ) VALUES (
-            new_entry_id,
             new_entry_id,
             rec->>'accountId',
             COALESCE(rec->>'description', p_description),
