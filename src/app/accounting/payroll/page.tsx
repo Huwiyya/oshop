@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { getEmployees, createPayslip, getPayslipById, type PayslipLine } from '@/lib/payroll-actions';
+import { getEmployees, createPayslip, getPayslipById, deletePayslip, type PayslipLine } from '@/lib/payroll-actions';
 import { getAllAccounts } from '@/lib/accounting-actions';
 import { useToast } from '@/components/ui/use-toast';
 import { formatCurrency, cn } from '@/lib/utils';
@@ -106,6 +106,22 @@ function PayrollContent() {
             });
 
             toast({ title: isDraft ? 'تم الحفظ' : 'تم الاعتماد' });
+            router.push('/accounting/payroll/history');
+        } catch (error: any) {
+            toast({ title: 'خطأ', description: error.message, variant: 'destructive' });
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const handleDelete = async () => {
+        if (!slipId) return;
+        if (!window.confirm('هل أنت متأكد من حذف هذه المسودة؟ لا يمكن التراجع عن هذه العملية.')) return;
+
+        setLoading(true);
+        try {
+            await deletePayslip(slipId);
+            toast({ title: 'تم الحذف بنجاح' });
             router.push('/accounting/payroll/history');
         } catch (error: any) {
             toast({ title: 'خطأ', description: error.message, variant: 'destructive' });
@@ -281,6 +297,16 @@ function PayrollContent() {
                 </CardContent>
                 {!isView ? (
                     <CardFooter className="flex gap-4">
+                        {slipId && (
+                            <Button
+                                variant="outline"
+                                className="h-12 px-4 text-red-500 border-red-200 hover:bg-red-50"
+                                onClick={handleDelete}
+                                disabled={loading}
+                            >
+                                <Trash2 className="w-4 h-4" />
+                            </Button>
+                        )}
                         <Button
                             variant="outline"
                             className="flex-1 h-12 text-lg border-slate-300"
@@ -288,7 +314,7 @@ function PayrollContent() {
                             disabled={loading}
                         >
                             <Save className="w-4 h-4 mr-2" />
-                            حفظ كمسودة (لمراجعة لاحقاً)
+                            حفظ كمسودة
                         </Button>
                         <Button
                             className="flex-[2] h-12 text-lg bg-blue-600 hover:bg-blue-700"

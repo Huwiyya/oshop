@@ -2,23 +2,42 @@
 import { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { getPayslips } from '@/lib/payroll-actions';
+import { getPayslips, deletePayslip } from '@/lib/payroll-actions';
 import { formatCurrency, formatDate } from '@/lib/utils';
-import { ArrowLeft, FileText, ExternalLink, Calendar, User, DollarSign, Tag, CheckCircle2, Clock } from 'lucide-react';
+import { ArrowLeft, FileText, ExternalLink, Calendar, User, DollarSign, Tag, CheckCircle2, Clock, Trash2 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { Badge } from '@/components/ui/badge';
+import { useToast } from '@/components/ui/use-toast';
 
 export default function PayrollHistoryPage() {
     const router = useRouter();
     const [payslips, setPayslips] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
+    const { toast } = useToast();
 
-    useEffect(() => {
+    const loadPayslips = () => {
+        setLoading(true);
         getPayslips().then(data => {
             setPayslips(data || []);
             setLoading(false);
         });
+    };
+
+    useEffect(() => {
+        loadPayslips();
     }, []);
+
+    const handleDelete = async (id: string, number: string) => {
+        if (!window.confirm(`هل أنت متأكد من حذف القسيمة ${number}؟ لا يمكن التراجع عن هذه العملية.`)) return;
+
+        try {
+            await deletePayslip(id);
+            toast({ title: 'تم الحذف بنجاح' });
+            loadPayslips();
+        } catch (error: any) {
+            toast({ title: 'خطأ في الحذف', description: error.message, variant: 'destructive' });
+        }
+    };
 
     return (
         <div className="space-y-6 max-w-6xl mx-auto pb-20">
@@ -89,25 +108,35 @@ export default function PayrollHistoryPage() {
                                             {formatDate(slip.created_at)}
                                         </td>
                                         <td className="px-6 py-4 text-left">
-                                            {slip.is_draft ? (
+                                            <div className="flex gap-2">
+                                                {slip.is_draft ? (
+                                                    <Button
+                                                        variant="ghost"
+                                                        size="sm"
+                                                        className="gap-2 text-amber-600 hover:text-amber-700 hover:bg-amber-50"
+                                                        onClick={() => router.push(`/accounting/payroll?id=${slip.id}`)}
+                                                    >
+                                                        تعديل <FileText className="w-3 h-3" />
+                                                    </Button>
+                                                ) : (
+                                                    <Button
+                                                        variant="ghost"
+                                                        size="sm"
+                                                        className="gap-2 text-blue-500 hover:bg-blue-50"
+                                                        onClick={() => router.push(`/accounting/payroll?id=${slip.id}&view=true`)}
+                                                    >
+                                                        عرض <ExternalLink className="w-3 h-3" />
+                                                    </Button>
+                                                )}
                                                 <Button
                                                     variant="ghost"
                                                     size="sm"
-                                                    className="gap-2 text-amber-600 hover:text-amber-700 hover:bg-amber-50"
-                                                    onClick={() => router.push(`/accounting/payroll?id=${slip.id}`)}
+                                                    className="gap-2 text-red-400 hover:text-red-600 hover:bg-red-50"
+                                                    onClick={() => handleDelete(slip.id, slip.slip_number)}
                                                 >
-                                                    تعديل <FileText className="w-3 h-3" />
+                                                    <Trash2 className="w-3 h-3" />
                                                 </Button>
-                                            ) : (
-                                                <Button
-                                                    variant="ghost"
-                                                    size="sm"
-                                                    className="gap-2 text-blue-500 hover:bg-blue-50"
-                                                    onClick={() => router.push(`/accounting/payroll?id=${slip.id}&view=true`)}
-                                                >
-                                                    عرض <ExternalLink className="w-3 h-3" />
-                                                </Button>
-                                            )}
+                                            </div>
                                         </td>
                                     </tr>
                                 ))}

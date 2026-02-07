@@ -119,3 +119,37 @@ BEGIN
     RETURN v_slip_id;
 END;
 $func$ LANGUAGE plpgsql;
+
+-- 5. RPC to delete payroll slip and associated journal entry
+CREATE OR REPLACE FUNCTION delete_payroll_slip_rpc(
+    p_slip_id TEXT
+)
+RETURNS JSONB AS $func$
+DECLARE
+    v_slip_number TEXT;
+    v_journal_id TEXT;
+BEGIN
+    -- 1. Get Details
+    SELECT slip_number, journal_entry_id INTO v_slip_number, v_journal_id
+    FROM payroll_slips WHERE id = p_slip_id;
+
+    IF v_slip_number IS NULL THEN
+        RAISE EXCEPTION 'Payslip not found';
+    END IF;
+
+    -- 2. Delete Lines
+    DELETE FROM payroll_slip_lines WHERE slip_id = p_slip_id;
+
+    -- 3. Delete Header
+    DELETE FROM payroll_slips WHERE id = p_slip_id;
+
+    -- 4. Delete Journal Entry (if any)
+    IF v_journal_id IS NOT NULL THEN
+        DELETE FROM journal_entries WHERE id = v_journal_id;
+    END IF;
+
+    RETURN jsonb_build_object('success', true, 'deleted_id', p_slip_id, 'slip_number', v_slip_number);
+EXCEPTION WHEN OTHERS THEN
+    RAISE EXCEPTION 'Delete Payroll Slip Failed: %', SQLERRM;
+END;
+$func$ LANGUAGE plpgsql;

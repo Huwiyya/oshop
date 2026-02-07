@@ -240,3 +240,15 @@ export async function deleteEmployee(id: string) {
         return { success: false, error: error.message };
     }
 }
+
+/**
+ * Delete Payslip
+ */
+export async function deletePayslip(id: string) {
+    const { data, error } = await supabaseAdmin.rpc('delete_payroll_slip_rpc', {
+        p_slip_id: id
+    });
+
+    if (error) throw new Error(error.message);
+    return data;
+}
