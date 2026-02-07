@@ -7,7 +7,9 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { ArrowLeft, Plus, History, CreditCard, Tag, Trash } from 'lucide-react';
-import { getInventoryItemById, getItemLayers, addInventoryStock, getItemTransactions, deleteInventoryTransaction } from '@/lib/inventory-actions';
+import { getInventoryItemById, getItemLayers, addInventoryStock, getItemTransactions, deleteInventoryTransaction, updateInventoryItem } from '@/lib/inventory-actions';
+import { getAllAccounts } from '@/lib/accounting-actions';
+import { AccountSelector } from '@/components/accounting/AccountSelector';
 import { formatCurrency } from '@/lib/utils';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
@@ -15,6 +17,7 @@ import { Input } from '@/components/ui/input';
 import { useToast } from '@/components/ui/use-toast';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
+import { Edit2 } from 'lucide-react';
 
 export default function InventoryItemDetails() {
     const { id } = useParams();
@@ -51,10 +54,13 @@ export default function InventoryItemDetails() {
                         <ArrowLeft className="h-4 w-4" />
                     </Button>
                     <div>
-                        <h1 className="text-2xl font-bold flex items-center gap-2">
-                            {item.name_ar}
-                            {item.is_shein_card && <span className="bg-purple-100 text-purple-700 text-xs px-2 py-1 rounded-full">بطاقات</span>}
-                        </h1>
+                        <div className="flex items-center gap-3">
+                            <h1 className="text-2xl font-bold flex items-center gap-2">
+                                {item.name_ar}
+                                {item.is_shein_card && <span className="bg-purple-100 text-purple-700 text-xs px-2 py-1 rounded-full">بطاقات</span>}
+                            </h1>
+                            <EditItemDialog item={item} onSuccess={refreshData} />
+                        </div>
                         <p className="text-slate-500 font-mono">{item.item_code}</p>
                     </div>
                 </div>
@@ -157,13 +163,19 @@ function InventoryTransactionsTable({ itemId, onRefresh }: { itemId: string, onR
             let balance = 0;
             const withBalance = sorted.map(trx => {
                 // Determine direction based on type
-                // purchase, transfer_in: +
-                // sale, transfer_out: -
-                const isIn = trx.transaction_type === 'purchase' || trx.transaction_type === 'transfer_in';
-                const qty = Number(trx.quantity) || 0;
-                balance += isIn ? qty : -qty;
+                // Incoming (+): purchase, adjustment_in, sale_return, transfer_in
+                // Outgoing (-): sale, adjustment_out, purchase_return, transfer_out
+                const incomingTypes = ['purchase', 'adjustment_in', 'sale_return', 'transfer_in'];
+                const outgoingTypes = ['sale', 'adjustment_out', 'purchase_return', 'transfer_out'];
 
-                return { ...trx, balance };
+                const isIn = incomingTypes.includes(trx.transaction_type);
+                const isOut = outgoingTypes.includes(trx.transaction_type);
+
+                const qty = Number(trx.quantity) || 0;
+                if (isIn) balance += qty;
+                else if (isOut) balance -= qty;
+
+                return { ...trx, balance, isIn, isOut };
             });
 
             // Set transactions to display (DESC)
@@ -247,14 +259,10 @@ function InventoryTransactionsTable({ itemId, onRefresh }: { itemId: string, onR
                                             </div>
                                         </TableCell>
                                         <TableCell className="font-bold text-emerald-600 bg-emerald-50/30">
-                                            {trx.transaction_type === 'purchase' || trx.transaction_type === 'transfer_in'
-                                                ? trx.quantity
-                                                : '-'}
+                                            {trx.isIn ? trx.quantity : '-'}
                                         </TableCell>
                                         <TableCell className="font-bold text-red-600 bg-red-50/30">
-                                            {trx.transaction_type === 'sale' || trx.transaction_type === 'transfer_out'
-                                                ? trx.quantity
-                                                : '-'}
+                                            {trx.isOut ? trx.quantity : '-'}
                                         </TableCell>
                                         <TableCell className="font-bold font-mono bg-slate-50">
                                             {trx.balance}
@@ -288,7 +296,13 @@ function getTransactionTypeLabel(type: string) {
         'purchase': 'شراء',
         'sale': 'بيع',
         'adjustment': 'تسوية',
-        'transfer': 'نقل'
+        'adjustment_in': 'تسوية(+) وارد',
+        'adjustment_out': 'تسوية(-) صادر',
+        'sale_return': 'مرتجع مبعيات',
+        'purchase_return': 'مرتجع مشتريات',
+        'transfer': 'نقل',
+        'transfer_in': 'تحويل وارد',
+        'transfer_out': 'تحويل صادر'
     };
     return types[type] || type;
 }
@@ -385,6 +399,118 @@ function AddStockDialog({ item, onSuccess }: { item: any, onSuccess: () => void 
                     <DialogFooter>
                         <Button type="submit" disabled={loading}>
                             {loading ? 'جاري الحفظ...' : 'تأكيد الإضافة'}
+                        </Button>
+                    </DialogFooter>
+                </form>
+            </DialogContent>
+        </Dialog>
+    );
+}
+
+function EditItemDialog({ item, onSuccess }: { item: any, onSuccess: () => void }) {
+    const [open, setOpen] = useState(false);
+    const [loading, setLoading] = useState(false);
+    const { toast } = useToast();
+    const [allAccounts, setAllAccounts] = useState<any[]>([]);
+
+    useEffect(() => {
+        if (open) {
+            getAllAccounts().then(data => setAllAccounts(data || []));
+        }
+    }, [open]);
+
+    const revenueAccounts = allAccounts.filter(a => a.account_code.toString().startsWith('4') && !a.is_parent);
+    const expenseAccounts = allAccounts.filter(a => a.account_code.toString().startsWith('5') && !a.is_parent);
+    const assetAccounts = allAccounts.filter(a => a.account_code.toString().startsWith('1') && !a.is_parent);
+
+    const [formData, setFormData] = useState({
+        name_ar: item.name_ar,
+        item_code: item.item_code,
+        description: item.description || '',
+        inventory_account_id: item.inventory_account_id || '',
+        sales_account_id: item.sales_account_id || '',
+        cogs_account_id: item.cogs_account_id || ''
+    });
+
+    const handleSubmit = async (e: React.FormEvent) => {
+        e.preventDefault();
+        setLoading(true);
+        try {
+            await updateInventoryItem(item.id, formData);
+            toast({ title: 'تم التحديث بنجاح' });
+            setOpen(false);
+            onSuccess();
+        } catch (error: any) {
+            toast({ title: 'خطأ', description: error.message, variant: 'destructive' });
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    return (
+        <Dialog open={open} onOpenChange={setOpen}>
+            <DialogTrigger asChild>
+                <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-400 hover:text-blue-600">
+                    <Edit2 className="w-4 h-4" />
+                </Button>
+            </DialogTrigger>
+            <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+                <DialogHeader>
+                    <DialogTitle>تعديل بيانات الصنف: {item.name_ar}</DialogTitle>
+                </DialogHeader>
+                <form onSubmit={handleSubmit} className="space-y-4 py-4">
+                    <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                            <Label>كود الصنف</Label>
+                            <Input
+                                required
+                                value={formData.item_code}
+                                onChange={e => setFormData({ ...formData, item_code: e.target.value })}
+                            />
+                        </div>
+                        <div className="space-y-2">
+                            <Label>الاسم (عربي)</Label>
+                            <Input
+                                required
+                                value={formData.name_ar}
+                                onChange={e => setFormData({ ...formData, name_ar: e.target.value })}
+                            />
+                        </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                            <Label>حساب المخزون (Asset)</Label>
+                            <AccountSelector
+                                accounts={assetAccounts}
+                                value={formData.inventory_account_id}
+                                onChange={(v) => setFormData({ ...formData, inventory_account_id: v })}
+                                placeholder="اختر حساب المخزون..."
+                            />
+                        </div>
+                        <div className="space-y-2">
+                            <Label>حساب المبيعات (Revenue)</Label>
+                            <AccountSelector
+                                accounts={revenueAccounts}
+                                value={formData.sales_account_id}
+                                onChange={(v) => setFormData({ ...formData, sales_account_id: v })}
+                                placeholder="اختر حساب المبيعات..."
+                            />
+                        </div>
+                        <div className="space-y-2">
+                            <Label>حساب تكلفة المبيعات (COGS)</Label>
+                            <AccountSelector
+                                accounts={expenseAccounts}
+                                value={formData.cogs_account_id}
+                                onChange={(v) => setFormData({ ...formData, cogs_account_id: v })}
+                                placeholder="اختر حساب التكلفة..."
+                            />
+                        </div>
+                    </div>
+
+                    <DialogFooter>
+                        <Button type="submit" disabled={loading} className="w-full sm:w-auto">
+                            {loading ? 'جاري الحفظ...' : 'حفظ التعديلات'}
                         </Button>
                     </DialogFooter>
                 </form>

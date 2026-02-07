@@ -1,0 +1,1 @@
+{"success":false,"error":"Create Purchase Failed: Purchase Invoice Creation Failed: null value in column \"account_id\" of relation \"journal_entry_lines\" violates not-null constraint","steps":[{"msg":"Item Created","id":"f3cfc692-2513-4f3a-ae14-52b1514c26b5","initial_qty":0}],"itemId":"f3cfc692-2513-4f3a-ae14-52b1514c26b5","purchaseId":null}

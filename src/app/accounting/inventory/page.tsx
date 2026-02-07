@@ -10,7 +10,7 @@ import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogDescription } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Package, Search, Plus, CreditCard, Box, ArrowRight, Layers, Trash } from 'lucide-react';
+import { Package, Search, Plus, CreditCard, Box, ArrowRight, Layers, Trash, ArrowRightLeft } from 'lucide-react';
 import { getInventoryItems, createInventoryItem, deleteInventoryItem } from '@/lib/inventory-actions';
 import { getAllAccounts } from '@/lib/accounting-actions';
 import { formatCurrency } from '@/lib/utils';
@@ -51,6 +51,14 @@ export default function InventoryPage() {
                     <p className="text-slate-500">تتبع الأصناف، البطاقات، وحركات المخزون</p>
                 </div>
                 <div className="flex gap-2">
+                    <Button
+                        variant="outline"
+                        className="gap-2 border-blue-200 hover:bg-blue-50 text-blue-700"
+                        onClick={() => router.push('/accounting/inventory/transfer')}
+                    >
+                        <ArrowRightLeft className="w-4 h-4" />
+                        التحويل بين الأصناف
+                    </Button>
                     <AddItemDialog onSuccess={fetchItems} />
                 </div>
             </div>
@@ -201,34 +209,32 @@ function DeleteItemDialog({ item, onSuccess }: { item: any, onSuccess: () => voi
     )
 }
 
+import { AccountSelector } from '@/components/accounting/AccountSelector';
+
 function AddItemDialog({ onSuccess }: { onSuccess: () => void }) {
     const [open, setOpen] = useState(false);
     const [isLoading, setIsLoading] = useState(false);
     const { toast } = useToast();
-    const [accounts, setAccounts] = useState<any[]>([]);
-    const [expenseAccounts, setExpenseAccounts] = useState<any[]>([]);
+    const [allAccounts, setAllAccounts] = useState<any[]>([]);
 
     useEffect(() => {
         if (open) {
-            getAllAccounts().then(data => {
-                // Filter Revenue accounts (Class 4)
-                const revenues = data?.filter((a: any) => a.account_code.toString().startsWith('4') && !a.is_parent) || [];
-                setAccounts(revenues);
-
-                // Filter Expense accounts (Class 5) for COGS
-                const expenses = data?.filter((a: any) => a.account_code.toString().startsWith('5') && !a.is_parent) || [];
-                setExpenseAccounts(expenses);
-            });
+            getAllAccounts().then(data => setAllAccounts(data || []));
         }
     }, [open]);
+
+    const revenueAccounts = allAccounts.filter(a => a.account_code.toString().startsWith('4') && !a.is_parent);
+    const expenseAccounts = allAccounts.filter(a => a.account_code.toString().startsWith('5') && !a.is_parent);
+    const assetAccounts = allAccounts.filter(a => a.account_code.toString().startsWith('1') && !a.is_parent);
 
     const [formData, setFormData] = useState({
         item_code: '',
         name_ar: '',
         name_en: '',
-        category: 'general', // general or cards
+        category: 'general',
         description: '',
-        revenue_account_id: '',
+        inventory_account_id: '',
+        sales_account_id: '',
         cogs_account_id: ''
     });
 
@@ -239,7 +245,7 @@ function AddItemDialog({ onSuccess }: { onSuccess: () => void }) {
             await createInventoryItem(formData);
             toast({ title: 'تمت الإضافة بنجاح' });
             setOpen(false);
-            setFormData({ item_code: '', name_ar: '', name_en: '', category: 'general', description: '', revenue_account_id: '', cogs_account_id: '' });
+            setFormData({ item_code: '', name_ar: '', name_en: '', category: 'general', description: '', inventory_account_id: '', sales_account_id: '', cogs_account_id: '' });
             onSuccess();
         } catch (error: any) {
             toast({ title: 'خطأ', description: error.message, variant: 'destructive' });
@@ -256,7 +262,7 @@ function AddItemDialog({ onSuccess }: { onSuccess: () => void }) {
                     إضافة صنف جديد
                 </Button>
             </DialogTrigger>
-            <DialogContent className="max-w-2xl">
+            <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
                 <DialogHeader>
                     <DialogTitle>إضافة صنف مخزني جديد</DialogTitle>
                 </DialogHeader>
@@ -302,56 +308,42 @@ function AddItemDialog({ onSuccess }: { onSuccess: () => void }) {
                         )}
                     </div>
 
-                    <div className="space-y-2">
-                        <Label>حساب الإيراد المرتبط (اختياري)</Label>
-                        <Select
-                            value={formData.revenue_account_id}
-                            onValueChange={(v) => setFormData({ ...formData, revenue_account_id: v })}
-                        >
-                            <SelectTrigger>
-                                <SelectValue placeholder="الافتراضي (حساب المبيعات العام)" />
-                            </SelectTrigger>
-                            <SelectContent className="max-h-[200px]">
-                                {accounts.map((acc) => (
-                                    <SelectItem key={acc.id} value={acc.id}>
-                                        <span className="font-mono text-slate-500 ml-2">{acc.account_code}</span>
-                                        {acc.name_ar}
-                                    </SelectItem>
-                                ))}
-                            </SelectContent>
-                        </Select>
-                        <p className="text-xs text-slate-500">
-                            عند بيع هذا الصنف، سيتم تسجيل الإيراد في هذا الحساب بدلاً من حساب المبيعات العام.
-                            مفيد لفصل إيرادات (شي ان) عن المنتجات الأخرى.
-                        </p>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                            <Label>حساب المخزون (Asset)</Label>
+                            <AccountSelector
+                                accounts={assetAccounts}
+                                value={formData.inventory_account_id}
+                                onChange={(v) => setFormData({ ...formData, inventory_account_id: v })}
+                                placeholder="الافتراضي (1130 - بضاعة)"
+                            />
+                        </div>
+                        <div className="space-y-2">
+                            <Label>حساب المبيعات (Revenue)</Label>
+                            <AccountSelector
+                                accounts={revenueAccounts}
+                                value={formData.sales_account_id}
+                                onChange={(v) => setFormData({ ...formData, sales_account_id: v })}
+                                placeholder="الافتراضي (4100 - مبيعات)"
+                            />
+                        </div>
+                        <div className="space-y-2">
+                            <Label>حساب تكلفة المبيعات (COGS)</Label>
+                            <AccountSelector
+                                accounts={expenseAccounts}
+                                value={formData.cogs_account_id}
+                                onChange={(v) => setFormData({ ...formData, cogs_account_id: v })}
+                                placeholder="الافتراضي (5100 - تكلفة مبيعات)"
+                            />
+                        </div>
                     </div>
 
-                    <div className="space-y-2">
-                        <Label>حساب تكلفة البضاعة المباعة (اختياري)</Label>
-                        <Select
-                            value={formData.cogs_account_id}
-                            onValueChange={(v) => setFormData({ ...formData, cogs_account_id: v })}
-                        >
-                            <SelectTrigger>
-                                <SelectValue placeholder="الافتراضي (5100 - تكلفة بضاعة مباعة)" />
-                            </SelectTrigger>
-                            <SelectContent className="max-h-[200px]">
-                                {expenseAccounts.map((acc) => (
-                                    <SelectItem key={acc.id} value={acc.id}>
-                                        <span className="font-mono text-slate-500 ml-2">{acc.account_code}</span>
-                                        {acc.name_ar}
-                                    </SelectItem>
-                                ))}
-                            </SelectContent>
-                        </Select>
-                        <p className="text-xs text-slate-500">
-                            عند بيع هذا الصنف، سيتم تسجيل التكلفة في هذا الحساب بدلاً من حساب التكلفة العام.
-                            مفيد لتتبع تكاليف أصناف معينة (مثل بطاقات شي ان).
-                        </p>
-                    </div>
+                    <p className="text-xs text-slate-500 bg-slate-50 p-2 rounded">
+                        * سيتم استخدام هذه الحسابات تلقائياً عند إنشاء فواتير المبيعات والمشتريات لهذا الصنف.
+                    </p>
 
                     <DialogFooter>
-                        <Button type="submit" disabled={isLoading}>
+                        <Button type="submit" disabled={isLoading} className="w-full sm:w-auto">
                             {isLoading ? 'جاري الحفظ...' : 'حفظ الصنف'}
                         </Button>
                     </DialogFooter>

@@ -13,3 +13,13 @@ export function formatCurrency(amount: number | string) {
     minimumFractionDigits: 2
   }).format(value || 0).replace('LYD', 'د.ل');
 }
+
+export function formatDate(date: string | Date) {
+  if (!date) return '-';
+  const d = typeof date === 'string' ? new Date(date) : date;
+  return new Intl.DateTimeFormat('ar-EG', {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric'
+  }).format(d);
+}

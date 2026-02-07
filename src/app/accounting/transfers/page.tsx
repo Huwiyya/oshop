@@ -198,16 +198,202 @@ function USDTConversionForm() {
 }
 
 function StockTransferForm() {
+    const { toast } = useToast();
+    const [loading, setLoading] = useState(false);
+    const [items, setItems] = useState<any[]>([]);
+
+    // Form State
+    const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
+    const [notes, setNotes] = useState('');
+
+    // Lists
+    const [sourceItems, setSourceItems] = useState<{ itemId: string, quantity: number }[]>([{ itemId: '', quantity: 1 }]);
+    const [targetItems, setTargetItems] = useState<{ itemId: string, quantity: number }[]>([{ itemId: '', quantity: 1 }]);
+
+    useEffect(() => {
+        getInventoryItems().then(data => setItems(data || []));
+    }, []);
+
+    const addSource = () => setSourceItems([...sourceItems, { itemId: '', quantity: 1 }]);
+    const removeSource = (idx: number) => setSourceItems(sourceItems.filter((_, i) => i !== idx));
+
+    const addTarget = () => setTargetItems([...targetItems, { itemId: '', quantity: 1 }]);
+    const removeTarget = (idx: number) => setTargetItems(targetItems.filter((_, i) => i !== idx));
+
+    const handleSubmit = async (e: React.FormEvent) => {
+        e.preventDefault();
+        setLoading(true);
+
+        try {
+            // Prepare Payload for "Open Transfer"
+            // Source Items are Negative (Out)
+            // Target Items are Positive (In)
+
+            const payloadItems = [];
+
+            // 1. Process Source (Out)
+            for (const line of sourceItems) {
+                if (!line.itemId || line.quantity <= 0) continue;
+                payloadItems.push({
+                    itemId: line.itemId,
+                    quantity: -Math.abs(line.quantity), // Force Negative
+                    notes: 'Transfer Out - Source'
+                });
+            }
+
+            // 2. Process Target (In)
+            for (const line of targetItems) {
+                if (!line.itemId || line.quantity <= 0) continue;
+                payloadItems.push({
+                    itemId: line.itemId,
+                    quantity: Math.abs(line.quantity), // Force Positive
+                    notes: 'Transfer In - Destination'
+                });
+            }
+
+            if (payloadItems.length === 0) throw new Error("يجب إضافة عناصر للتحويل");
+
+            // Import Server Action dynamically or at top
+            const { createFlexibleInventoryTransaction } = await import('@/lib/atomic-actions');
+
+            await createFlexibleInventoryTransaction({
+                date,
+                description: `تحويل مخزني: ${notes}`,
+                items: payloadItems
+            });
+
+            toast({ title: "تم التحويل بنجاح", description: "تم تحديث المخزون" });
+
+            // Reset
+            setSourceItems([{ itemId: '', quantity: 1 }]);
+            setTargetItems([{ itemId: '', quantity: 1 }]);
+            setNotes('');
+        } catch (error: any) {
+            toast({ title: "خطأ", description: error.message, variant: 'destructive' });
+        } finally {
+            setLoading(false);
+        }
+    };
+
     return (
-        <Card className="max-w-2xl">
+        <Card className="max-w-4xl">
             <CardHeader>
-                <CardTitle>نقل بين الأصناف</CardTitle>
-                <CardDescription>تحويل كمية من صنف إلى آخر (قيد التطوير)</CardDescription>
+                <CardTitle>تحويل ونقل أصناف (Open Transfer)</CardTitle>
+                <CardDescription>نقل من صنف لآخر، تجميع، أو تفكيك</CardDescription>
             </CardHeader>
-            <CardContent className="text-center py-10 text-slate-500">
-                هذه الميزة ستتيح تحويل المخزون (مثلاً تفكيك مجموعة إلى قطع)
-                <br />
-                سيتم تفعيلها قريباً
+            <CardContent>
+                <form onSubmit={handleSubmit} className="space-y-6">
+
+                    {/* Header Info */}
+                    <div className="flex gap-4">
+                        <div className="w-1/3">
+                            <Label>تاريخ العملية</Label>
+                            <Input type="date" value={date} onChange={e => setDate(e.target.value)} required />
+                        </div>
+                        <div className="w-2/3">
+                            <Label>ملاحظات عامة</Label>
+                            <Input value={notes} onChange={e => setNotes(e.target.value)} placeholder="سبب التحويل..." />
+                        </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-8 border-t pt-6">
+                        {/* LEFT: SOURCE (OUT) */}
+                        <div className="space-y-4">
+                            <div className="flex justify-between items-center text-red-600 bg-red-50 p-2 rounded">
+                                <h3 className="font-semibold">المصدر (خارج من المخزن) 📤</h3>
+                            </div>
+
+                            {sourceItems.map((line, idx) => (
+                                <div key={idx} className="flex gap-2 items-end bg-slate-50 p-3 rounded-md">
+                                    <div className="flex-1 space-y-1">
+                                        <Label className="text-xs">الصنف</Label>
+                                        <Select
+                                            value={line.itemId}
+                                            onValueChange={v => {
+                                                const newL = [...sourceItems];
+                                                newL[idx].itemId = v;
+                                                setSourceItems(newL);
+                                            }}
+                                        >
+                                            <SelectTrigger><SelectValue placeholder="اختر صنف..." /></SelectTrigger>
+                                            <SelectContent>
+                                                {items.map(i => <SelectItem key={i.id} value={i.id}>{i.name_ar}</SelectItem>)}
+                                            </SelectContent>
+                                        </Select>
+                                    </div>
+                                    <div className="w-24 space-y-1">
+                                        <Label className="text-xs">الكمية</Label>
+                                        <Input
+                                            type="number" min="0.01" step="0.01"
+                                            value={line.quantity}
+                                            onChange={e => {
+                                                const newL = [...sourceItems];
+                                                newL[idx].quantity = Number(e.target.value);
+                                                setSourceItems(newL);
+                                            }}
+                                        />
+                                    </div>
+                                    <Button type="button" variant="ghost" size="icon" onClick={() => removeSource(idx)}>
+                                        <span className="text-red-500 font-bold">×</span>
+                                    </Button>
+                                </div>
+                            ))}
+                            <Button type="button" variant="outline" size="sm" onClick={addSource} className="w-full border-dashed">
+                                + إضافة صنف للمصدر
+                            </Button>
+                        </div>
+
+                        {/* RIGHT: TARGET (IN) */}
+                        <div className="space-y-4">
+                            <div className="flex justify-between items-center text-emerald-600 bg-emerald-50 p-2 rounded">
+                                <h3 className="font-semibold">الهدف (داخل للمخزن) 📥</h3>
+                            </div>
+
+                            {targetItems.map((line, idx) => (
+                                <div key={idx} className="flex gap-2 items-end bg-slate-50 p-3 rounded-md">
+                                    <div className="flex-1 space-y-1">
+                                        <Label className="text-xs">الصنف</Label>
+                                        <Select
+                                            value={line.itemId}
+                                            onValueChange={v => {
+                                                const newL = [...targetItems];
+                                                newL[idx].itemId = v;
+                                                setTargetItems(newL);
+                                            }}
+                                        >
+                                            <SelectTrigger><SelectValue placeholder="اختر صنف..." /></SelectTrigger>
+                                            <SelectContent>
+                                                {items.map(i => <SelectItem key={i.id} value={i.id}>{i.name_ar}</SelectItem>)}
+                                            </SelectContent>
+                                        </Select>
+                                    </div>
+                                    <div className="w-24 space-y-1">
+                                        <Label className="text-xs">الكمية</Label>
+                                        <Input
+                                            type="number" min="0.01" step="0.01"
+                                            value={line.quantity}
+                                            onChange={e => {
+                                                const newL = [...targetItems];
+                                                newL[idx].quantity = Number(e.target.value);
+                                                setTargetItems(newL);
+                                            }}
+                                        />
+                                    </div>
+                                    <Button type="button" variant="ghost" size="icon" onClick={() => removeTarget(idx)}>
+                                        <span className="text-red-500 font-bold">×</span>
+                                    </Button>
+                                </div>
+                            ))}
+                            <Button type="button" variant="outline" size="sm" onClick={addTarget} className="w-full border-dashed">
+                                + إضافة صنف للهدف
+                            </Button>
+                        </div>
+                    </div>
+
+                    <Button type="submit" className="w-full bg-blue-600 hover:bg-blue-700" disabled={loading}>
+                        {loading ? 'جاري التحويل...' : 'تنفيذ عملية النقل/التحويل'}
+                    </Button>
+                </form>
             </CardContent>
         </Card>
     );

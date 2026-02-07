@@ -58,7 +58,7 @@ const navItems = [
   { href: '/admin/shipping-label', icon: Printer, label: 'إنشاء بوليصة شحن', permissionId: 'shipping_label' },
   { href: '/admin/temporary-users', icon: Users2, label: 'المستخدمين المؤقتين', permissionId: 'temporary_users' },
   { href: '/admin/financial-reports', icon: BarChart, label: 'التقارير المالية', permissionId: 'financial_reports' },
-  { href: '/admin/accounting', icon: FolderTree, label: 'الملخص المالي', permissionId: 'financial_reports' }, // Using financial_reports permission for now as accounting_tree doesn't exist users yet
+  { href: '/admin/instant-sales', icon: Zap, label: 'مبيعات فورية', permissionId: 'instant_sales' },
   { href: '/admin/instant-sales', icon: Zap, label: 'مبيعات فورية', permissionId: 'instant_sales' },
   { href: '/admin/deposits', icon: HandCoins, label: 'سجل العربون', permissionId: 'deposits' },
   { href: '/admin/expenses', icon: TrendingDown, label: 'إدارة المصروفات', permissionId: 'expenses' },

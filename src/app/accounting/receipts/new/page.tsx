@@ -14,6 +14,7 @@ import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, Command
 import { ArrowRight, User, Check, ChevronsUpDown } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import Link from 'next/link';
+import { AccountSelector } from '@/components/accounting/AccountSelector';
 
 export default function NewReceiptPage() {
     const router = useRouter();
@@ -24,20 +25,19 @@ export default function NewReceiptPage() {
     // Form State
     const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
     const [accountId, setAccountId] = useState(''); // Debit Account (Cash/Bank)
-    const [creditAccountId, setCreditAccountId] = useState(''); // Credit Account (Customer/Revenue)
     const [payer, setPayer] = useState('');
     const [relatedUserId, setRelatedUserId] = useState('');
     const [description, setDescription] = useState('');
-    const [amount, setAmount] = useState('');
+    const [lineItems, setLineItems] = useState<{ accountId: string; amount: number; description: string }[]>([
+        { accountId: '', amount: 0, description: '' }
+    ]);
     const [currency, setCurrency] = useState<'LYD' | 'USD'>('LYD');
     const [openPayer, setOpenPayer] = useState(false);
-    const [openCreditAccount, setOpenCreditAccount] = useState(false);
 
     const selectedUser = users.find(u => u.id === relatedUserId);
 
     useEffect(() => {
         async function load() {
-            // Load ALL accounts from chart of accounts instead of just cash/bank
             const { getAllAccounts } = await import('@/lib/accounting-actions');
             const [allAccounts, usersList] = await Promise.all([
                 getAllAccounts(),
@@ -49,23 +49,38 @@ export default function NewReceiptPage() {
         load();
     }, []);
 
+    const totalAmount = lineItems.reduce((sum, item) => sum + item.amount, 0);
     const currencySymbol = currency === 'LYD' ? 'د.ل' : '$';
 
+    const handleAddLine = () => {
+        setLineItems([...lineItems, { accountId: '', amount: 0, description: '' }]);
+    };
+
+    const handleRemoveLine = (index: number) => {
+        if (lineItems.length === 1) return;
+        setLineItems(lineItems.filter((_, i) => i !== index));
+    };
+
+    const handleLineChange = (index: number, field: string, value: any) => {
+        const newLines = [...lineItems];
+        newLines[index] = { ...newLines[index], [field]: value };
+        setLineItems(newLines);
+    };
+
     const handleSubmit = async () => {
-        if (!accountId || !amount) return;
+        if (!accountId || totalAmount <= 0) return;
         setIsLoading(true);
 
         const res = await createReceipt({
             date,
             payer,
-            relatedUserId: relatedUserId || undefined, // Send if selected
+            relatedUserId: relatedUserId || undefined,
             receiveAccountId: accountId,
             receiveAccountName: '',
-            creditAccountId: creditAccountId, // Pass credit account
             description,
-            amount: Number(amount),
+            amount: totalAmount,
             currency,
-            lineItems: []
+            lineItems: lineItems.filter(li => li.accountId && li.amount > 0)
         });
 
         if (res.success) {
@@ -78,7 +93,7 @@ export default function NewReceiptPage() {
     };
 
     return (
-        <div className="max-w-3xl mx-auto space-y-6">
+        <div className="max-w-4xl mx-auto space-y-6">
             <div className="flex items-center gap-4">
                 <Link href="/accounting/receipts">
                     <Button variant="ghost" size="icon">
@@ -92,9 +107,12 @@ export default function NewReceiptPage() {
                 <CardHeader>
                     <CardTitle>تفاصيل السند</CardTitle>
                 </CardHeader>
-                <CardContent className="space-y-4">
-
+                <CardContent className="space-y-6">
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                            <Label>التاريخ</Label>
+                            <Input type="date" value={date} onChange={e => setDate(e.target.value)} />
+                        </div>
                         <div className="space-y-2">
                             <Label>الحساب المستلم (إلى / Debit) - حساب الخزينة أو البنك</Label>
                             <Select value={accountId} onValueChange={(val) => {
@@ -107,7 +125,7 @@ export default function NewReceiptPage() {
                                 </SelectTrigger>
                                 <SelectContent>
                                     {accounts
-                                        .filter(a => a.account_code.startsWith('111') || a.account_code.startsWith('1')) // Filter for Cash/Bank logic if possible, or just Show All
+                                        .filter(a => a.account_code.startsWith('111') || a.account_code.startsWith('1'))
                                         .map(acc => (
                                             <SelectItem key={acc.id} value={acc.id}>
                                                 {acc.name_ar || acc.name_en} ({acc.currency || 'LYD'})
@@ -116,103 +134,6 @@ export default function NewReceiptPage() {
                                 </SelectContent>
                             </Select>
                         </div>
-
-                        <div className="space-y-2">
-                            <Label>الحساب الدائن (من / Credit) - العميل أو الإيراد</Label>
-                            <Popover open={openCreditAccount} onOpenChange={setOpenCreditAccount}>
-                                <PopoverTrigger asChild>
-                                    <Button
-                                        variant="outline"
-                                        role="combobox"
-                                        aria-expanded={openCreditAccount}
-                                        className="w-full justify-between h-auto py-3 text-right"
-                                    >
-                                        {creditAccountId
-                                            ? accounts.find((a) => a.id === creditAccountId)?.name_ar || "اختر حساب..."
-                                            : "اختر الحساب (عميل / إيراد)..."}
-                                        <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-                                    </Button>
-                                </PopoverTrigger>
-                                <PopoverContent className="w-[400px] p-0" align="start">
-                                    <Command>
-                                        <CommandInput placeholder="بحث عن حساب..." />
-                                        <CommandList>
-                                            <CommandEmpty>لم يتم العثور على حساب.</CommandEmpty>
-                                            <CommandGroup heading="الأصول (العملاء)">
-                                                {accounts.filter(a => a.account_code.startsWith('1120')).map((account) => ( // Customers
-                                                    <CommandItem
-                                                        key={account.id}
-                                                        value={`${account.name_ar} ${account.account_code}`}
-                                                        onSelect={() => {
-                                                            setCreditAccountId(account.id);
-                                                            setPayer(account.name_ar); // Auto-fill payer name
-                                                            setOpenCreditAccount(false);
-                                                        }}
-                                                    >
-                                                        <Check
-                                                            className={cn(
-                                                                "mr-2 h-4 w-4",
-                                                                creditAccountId === account.id ? "opacity-100" : "opacity-0"
-                                                            )}
-                                                        />
-                                                        <div className="flex flex-col">
-                                                            <span>{account.name_ar}</span>
-                                                            <span className="text-xs text-slate-500 font-mono">{account.account_code}</span>
-                                                        </div>
-                                                    </CommandItem>
-                                                ))}
-                                            </CommandGroup>
-                                            <CommandGroup heading="الإيرادات">
-                                                {accounts.filter(a => a.account_code.startsWith('4')).map((account) => (
-                                                    <CommandItem
-                                                        key={account.id}
-                                                        value={`${account.name_ar} ${account.account_code}`}
-                                                        onSelect={() => {
-                                                            setCreditAccountId(account.id);
-                                                            setOpenCreditAccount(false);
-                                                        }}
-                                                    >
-                                                        <Check
-                                                            className={cn(
-                                                                "mr-2 h-4 w-4",
-                                                                creditAccountId === account.id ? "opacity-100" : "opacity-0"
-                                                            )}
-                                                        />
-                                                        <div className="flex flex-col">
-                                                            <span>{account.name_ar}</span>
-                                                            <span className="text-xs text-slate-500 font-mono">{account.account_code}</span>
-                                                        </div>
-                                                    </CommandItem>
-                                                ))}
-                                            </CommandGroup>
-                                            <CommandGroup heading="أخرى">
-                                                {accounts.filter(a => !a.account_code.startsWith('1120') && !a.account_code.startsWith('4') && !a.account_code.startsWith('111')).slice(0, 10).map((account) => (
-                                                    <CommandItem
-                                                        key={account.id}
-                                                        value={`${account.name_ar} ${account.account_code}`}
-                                                        onSelect={() => {
-                                                            setCreditAccountId(account.id);
-                                                            setOpenCreditAccount(false);
-                                                        }}
-                                                    >
-                                                        <Check
-                                                            className={cn(
-                                                                "mr-2 h-4 w-4",
-                                                                creditAccountId === account.id ? "opacity-100" : "opacity-0"
-                                                            )}
-                                                        />
-                                                        <div className="flex flex-col">
-                                                            <span>{account.name_ar}</span>
-                                                            <span className="text-xs text-slate-500 font-mono">{account.account_code}</span>
-                                                        </div>
-                                                    </CommandItem>
-                                                ))}
-                                            </CommandGroup>
-                                        </CommandList>
-                                    </Command>
-                                </PopoverContent>
-                            </Popover>
-                        </div>
                     </div>
 
                     <div className="p-4 bg-gray-50 dark:bg-white/5 rounded-lg border space-y-4">
@@ -220,26 +141,13 @@ export default function NewReceiptPage() {
                             <User className="w-4 h-4" />
                             <span>بيانات المستلم منه</span>
                         </div>
-
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                             <div className="space-y-2">
-                                <Label>ربط بمستخدم النظام (اختياري - للمراجعة فقط)</Label>
+                                <Label>ربط بمستخدم النظام (اختياري)</Label>
                                 <Popover open={openPayer} onOpenChange={setOpenPayer}>
                                     <PopoverTrigger asChild>
-                                        <Button
-                                            variant="outline"
-                                            role="combobox"
-                                            aria-expanded={openPayer}
-                                            className="w-full justify-between h-auto py-3"
-                                        >
-                                            {selectedUser
-                                                ? (
-                                                    <div className="flex flex-col items-start gap-1">
-                                                        <span className="font-medium">{selectedUser.name || selectedUser.username || 'عميل بدون اسم'}</span>
-                                                        <span className="text-xs text-muted-foreground font-mono">{selectedUser.username || selectedUser.id.substring(0, 8)}</span>
-                                                    </div>
-                                                )
-                                                : "بحث عن عميل بالاسم أو الكود..."}
+                                        <Button variant="outline" role="combobox" className="w-full justify-between h-auto py-3">
+                                            {selectedUser ? selectedUser.name || selectedUser.username : "بحث عن عميل..."}
                                             <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                                         </Button>
                                     </PopoverTrigger>
@@ -252,22 +160,16 @@ export default function NewReceiptPage() {
                                                     {users.map((user) => (
                                                         <CommandItem
                                                             key={user.id}
-                                                            value={`${user.name || ''} ${user.username || ''} ${user.id}`} // Searchable string
                                                             onSelect={() => {
                                                                 setRelatedUserId(user.id);
                                                                 setPayer(user.name || user.username || '');
                                                                 setOpenPayer(false);
                                                             }}
                                                         >
-                                                            <Check
-                                                                className={cn(
-                                                                    "mr-2 h-4 w-4",
-                                                                    relatedUserId === user.id ? "opacity-100" : "opacity-0"
-                                                                )}
-                                                            />
-                                                            <div className="flex flex-col whitespace-normal">
-                                                                <span className="font-medium">{user.name || user.username || 'عميل بدون اسم'}</span>
-                                                                <span className="text-xs text-muted-foreground font-mono">{user.username || user.id.substring(0, 8)}</span >
+                                                            <Check className={cn("mr-2 h-4 w-4", relatedUserId === user.id ? "opacity-100" : "opacity-0")} />
+                                                            <div className="flex flex-col">
+                                                                <span className="font-medium">{user.name || user.username}</span>
+                                                                <span className="text-xs text-muted-foreground">{user.username}</span>
                                                             </div>
                                                         </CommandItem>
                                                     ))}
@@ -277,41 +179,98 @@ export default function NewReceiptPage() {
                                     </PopoverContent>
                                 </Popover>
                             </div>
-
                             <div className="space-y-2">
                                 <Label>الاسم في السند (Payer Name)</Label>
-                                <Input
-                                    placeholder="أو ادخل الاسم يدوياً..."
-                                    value={payer}
-                                    onChange={e => setPayer(e.target.value)}
-                                />
+                                <Input placeholder="أو ادخل الاسم يدوياً..." value={payer} onChange={e => setPayer(e.target.value)} />
                             </div>
                         </div>
                     </div>
 
                     <div className="space-y-2">
-                        <Label>المبلغ ({currencySymbol})</Label>
-                        <Input
-                            type="number"
-                            step="0.001"
-                            className="text-lg font-bold text-emerald-600"
-                            value={amount}
-                            onChange={e => setAmount(e.target.value)}
-                        />
+                        <Label>البيان العام (وصف السند)</Label>
+                        <Input placeholder="شرح عام لسند القبض..." value={description} onChange={e => setDescription(e.target.value)} />
                     </div>
 
-                    <div className="space-y-2">
-                        <Label>البيان (الوصف)</Label>
-                        <Input placeholder="شرح لسند القبض..." value={description} onChange={e => setDescription(e.target.value)} />
+                    <div className="space-y-4 pt-4 border-t">
+                        <div className="flex justify-between items-center">
+                            <h3 className="font-semibold">بنود السند (Account Distribution)</h3>
+                            <Button variant="outline" size="sm" onClick={handleAddLine} type="button">إضافة بند +</Button>
+                        </div>
+                        <div className="border rounded-md overflow-hidden">
+                            <table className="w-full text-sm">
+                                <thead className="bg-slate-50 border-b">
+                                    <tr>
+                                        <th className="px-4 py-2 text-right">الحساب الدائن (من / Credit)</th>
+                                        <th className="px-4 py-2 text-right">البيان (اختياري)</th>
+                                        <th className="px-4 py-2 text-right w-32">المبلغ ({currencySymbol})</th>
+                                        <th className="px-4 py-2 text-center w-16"></th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {lineItems.map((line, index) => (
+                                        <tr key={index} className="border-b last:border-0">
+                                            <td className="p-2">
+                                                <AccountSelector
+                                                    accounts={accounts}
+                                                    value={line.accountId}
+                                                    onChange={(val) => handleLineChange(index, 'accountId', val)}
+                                                    onAccountSelected={(acc) => {
+                                                        if (line.description === '') {
+                                                            handleLineChange(index, 'description', description);
+                                                        }
+                                                    }}
+                                                />
+                                            </td>
+                                            <td className="p-2">
+                                                <Input
+                                                    placeholder="وصف لهذا البند..."
+                                                    value={line.description}
+                                                    onChange={e => handleLineChange(index, 'description', e.target.value)}
+                                                />
+                                            </td>
+                                            <td className="p-2">
+                                                <Input
+                                                    type="number"
+                                                    value={line.amount || ''}
+                                                    onChange={e => handleLineChange(index, 'amount', Number(e.target.value))}
+                                                    className="font-mono text-emerald-600 font-bold"
+                                                />
+                                            </td>
+                                            <td className="p-2 text-center">
+                                                <Button
+                                                    variant="ghost"
+                                                    size="icon"
+                                                    onClick={() => handleRemoveLine(index)}
+                                                    className="text-red-500 h-8 w-8"
+                                                    disabled={lineItems.length === 1}
+                                                >
+                                                    <Trash2 className="w-4 h-4" />
+                                                </Button>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                                <tfoot className="bg-slate-50 font-bold">
+                                    <tr>
+                                        <td colSpan={2} className="px-4 py-2 text-left">إجمالي السند:</td>
+                                        <td className="px-4 py-2 text-emerald-600 font-mono text-lg">{formatCurrency(totalAmount)}</td>
+                                        <td></td>
+                                    </tr>
+                                </tfoot>
+                            </table>
+                        </div>
                     </div>
                 </CardContent>
                 <CardFooter className="flex justify-end gap-2 border-t pt-4">
                     <Button variant="outline" onClick={() => router.back()}>إلغاء</Button>
-                    <Button onClick={handleSubmit} disabled={isLoading || !accountId || !amount} className="bg-emerald-600 hover:bg-emerald-700">
-                        {isLoading ? 'جاري الحفظ...' : 'حفظ وسند'}
+                    <Button onClick={handleSubmit} disabled={isLoading || !accountId || totalAmount <= 0} className="bg-emerald-600 hover:bg-emerald-700">
+                        {isLoading ? 'جاري الحفظ...' : 'حفظ سند القبض'}
                     </Button>
                 </CardFooter>
             </Card>
         </div>
     );
 }
+
+import { Trash2 } from 'lucide-react';
+import { formatCurrency } from '@/lib/utils';

@@ -79,9 +79,10 @@ CREATE OR REPLACE FUNCTION create_journal_entry_rpc(
     p_description TEXT,
     p_reference_type TEXT,
     p_reference_id TEXT,
-    p_lines JSONB
+    p_lines JSONB,
+    p_is_hidden BOOLEAN DEFAULT FALSE -- New parameter
 )
-RETURNS TEXT AS $$
+RETURNS TEXT AS $func$
 DECLARE
     new_entry_id TEXT;
     new_entry_number TEXT; -- Rename to avoid collision if any
@@ -128,6 +129,7 @@ BEGIN
         total_debit,
         total_credit,
         status,
+        is_system_hidden, -- New column
         created_at,
         updated_at
     ) VALUES (
@@ -139,6 +141,7 @@ BEGIN
         v_total_debit,
         v_total_credit,
         'posted',
+        p_is_hidden, -- New value
         NOW(),
         NOW()
     ) RETURNING id INTO new_entry_id;
@@ -147,12 +150,14 @@ BEGIN
     FOR rec IN SELECT * FROM jsonb_array_elements(p_lines)
     LOOP
         INSERT INTO journal_entry_lines (
-            entry_id,
+            entry_id,           -- Original column (Schema file)
+            journal_entry_id,   -- New column (Actual DB)
             account_id,
             description,
             debit,
             credit
         ) VALUES (
+            new_entry_id,
             new_entry_id,
             rec->>'accountId',
             COALESCE(rec->>'description', p_description),
@@ -164,7 +169,7 @@ BEGIN
     -- E. Return ID
     RETURN new_entry_id;
 END;
-$$ LANGUAGE plpgsql;
+$func$ LANGUAGE plpgsql;
 
 -- 4. RPC: Run Depreciation (Atomic)
 CREATE OR REPLACE FUNCTION run_depreciation_rpc(
@@ -172,7 +177,7 @@ CREATE OR REPLACE FUNCTION run_depreciation_rpc(
     description TEXT,
     items JSONB -- Array of { asset_id, depreciation_amount, acc_dep_account_id, exp_account_id }
 )
-RETURNS JSONB AS $$
+RETURNS JSONB AS $func$
 DECLARE
     new_entry_id TEXT;
     total_amount DECIMAL(19,4) := 0;
@@ -225,4 +230,25 @@ BEGIN
 EXCEPTION WHEN OTHERS THEN
     RAISE EXCEPTION 'Depreciation Failed: %', SQLERRM;
 END;
-$$ LANGUAGE plpgsql;
+$func$ LANGUAGE plpgsql;
+
+-- Debug Helper: List Triggers
+CREATE OR REPLACE FUNCTION get_table_triggers(p_table_name TEXT)
+RETURNS JSONB AS $func$
+DECLARE
+    result JSONB;
+BEGIN
+    SELECT jsonb_agg(jsonb_build_object(
+        'trigger_name', tgname,
+        'action_statement', 'INTERNAL', -- pg_trigger doesn't store statement easily readable here
+        'event_manipulation', tgtype
+    ))
+    INTO result
+    FROM pg_trigger t
+    JOIN pg_class c ON t.tgrelid = c.oid
+    WHERE c.relname = p_table_name
+    AND t.tgisinternal = FALSE;
+    
+    RETURN COALESCE(result, '[]'::JSONB);
+END;
+$func$ LANGUAGE plpgsql;

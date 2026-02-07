@@ -17,6 +17,7 @@ export async function getJournalEntries(filters?: { query?: string; startDate?: 
     let query = supabaseAdmin
         .from('journal_entries')
         .select('*')
+        .eq('is_system_hidden', false)
         .order('entry_date', { ascending: false });
 
     if (filters?.startDate) query = query.gte('entry_date', filters.startDate);

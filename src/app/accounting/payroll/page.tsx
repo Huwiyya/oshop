@@ -7,209 +7,86 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { getEmployees, getExpenseAccounts, getAssetAccounts, createPayslip } from '@/lib/payroll-actions';
+import { getEmployees, createPayslip, type PayslipLine } from '@/lib/payroll-actions';
+import { getAllAccounts } from '@/lib/accounting-actions';
 import { useToast } from '@/components/ui/use-toast';
 import { formatCurrency, cn } from '@/lib/utils';
-import { ArrowLeft, Wallet, Calculator, FileText, Plus, Check, ChevronsUpDown, Save } from 'lucide-react';
+import { ArrowLeft, Wallet, Calculator, FileText, Plus, Check, ChevronsUpDown, Save, Trash2, History } from 'lucide-react';
 import { useRouter } from 'next/navigation';
-import {
-    Command,
-    CommandEmpty,
-    CommandGroup,
-    CommandInput,
-    CommandItem,
-    CommandList,
-} from "@/components/ui/command"
-import {
-    Popover,
-    PopoverContent,
-    PopoverTrigger,
-} from "@/components/ui/popover"
-
-// --- Reusable Combobox Component ---
-interface ComboboxProps {
-    items: { id: string; name_ar: string; account_code?: string }[];
-    value: string;
-    onChange: (value: string) => void;
-    placeholder?: string;
-    searchPlaceholder?: string;
-    disabled?: boolean;
-}
-
-function AccountCombobox({ items, value, onChange, placeholder = "اختر حساب...", searchPlaceholder = "بحث...", disabled = false }: ComboboxProps) {
-    const [open, setOpen] = useState(false);
-
-    const selectedItem = items.find(item => item.id === value);
-
-    return (
-        <Popover open={open} onOpenChange={setOpen}>
-            <PopoverTrigger asChild>
-                <Button
-                    variant="outline"
-                    role="combobox"
-                    aria-expanded={open}
-                    className="w-full justify-between font-normal"
-                    disabled={disabled}
-                >
-                    {selectedItem ? (
-                        <span className="truncate flex items-center gap-2">
-                            {selectedItem.account_code && <span className="text-slate-400 font-mono text-xs">{selectedItem.account_code}</span>}
-                            {selectedItem.name_ar}
-                        </span>
-                    ) : (
-                        <span className="text-slate-500">{placeholder}</span>
-                    )}
-                    <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-                </Button>
-            </PopoverTrigger>
-            <PopoverContent className="w-[300px] p-0" align="start">
-                <Command>
-                    <CommandInput placeholder={searchPlaceholder} />
-                    <CommandList>
-                        <CommandEmpty>لم يتم العثور على نتائج.</CommandEmpty>
-                        <CommandGroup>
-                            {items.map((item) => (
-                                <CommandItem
-                                    key={item.id}
-                                    value={item.name_ar}
-                                    onSelect={() => {
-                                        onChange(item.id);
-                                        setOpen(false);
-                                    }}
-                                >
-                                    <Check
-                                        className={cn(
-                                            "mr-2 h-4 w-4",
-                                            value === item.id ? "opacity-100" : "opacity-0"
-                                        )}
-                                    />
-                                    <div className="flex flex-col">
-                                        <span className="font-medium">{item.name_ar}</span>
-                                        {item.account_code && <span className="text-xs text-slate-400">{item.account_code}</span>}
-                                    </div>
-                                </CommandItem>
-                            ))}
-                        </CommandGroup>
-                    </CommandList>
-                </Command>
-            </PopoverContent>
-        </Popover>
-    );
-}
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
+import { AccountSelector } from '@/components/accounting/AccountSelector';
 
 export default function PayrollPage() {
     const router = useRouter();
     const { toast } = useToast();
     const [loading, setLoading] = useState(false);
-
-    // Data lists
+    const [accounts, setAccounts] = useState<any[]>([]);
     const [employees, setEmployees] = useState<any[]>([]);
-    const [expenseAccounts, setExpenseAccounts] = useState<any[]>([]);
-    const [assetAccounts, setAssetAccounts] = useState<any[]>([]);
 
-    // Form Data
     const [formData, setFormData] = useState({
         employeeId: '',
-        month: new Date().toISOString().slice(0, 7), // YYYY-MM
+        month: new Date().toISOString().slice(0, 7),
         paymentDate: new Date().toISOString().split('T')[0],
-
-        basicSalary: 0,
-        basicSalaryAccountId: '',
-
-        overtime: 0,
-        overtimeAccountId: '',
-
-        absence: 0,
-        absenceAccountId: '',
-
-        advances: 0,
-        advancesAccountId: '',
-
-        otherDeductions: 0,
-        notes: ''
+        lines: [
+            { id: Math.random().toString(), accountId: '', description: 'راتب أساسي', amount: 0, type: 'earning' as const }
+        ] as (PayslipLine & { id: string })[]
     });
-
-    const netSalary = (formData.basicSalary + formData.overtime) - (formData.absence + formData.advances + formData.otherDeductions);
 
     useEffect(() => {
         Promise.all([
             getEmployees(),
-            getExpenseAccounts(),
-            getAssetAccounts()
-        ]).then(([emps, exps, assets]) => {
+            getAllAccounts()
+        ]).then(([emps, accs]) => {
             setEmployees(emps || []);
-            setExpenseAccounts(exps || []);
-            setAssetAccounts(assets || []);
+            setAccounts(accs || []);
         });
     }, []);
 
-    // Set default salary account when loading
-    useEffect(() => {
-        if (expenseAccounts.length > 0 && !formData.basicSalaryAccountId) {
-            const salariesAcc = expenseAccounts.find(a => a.name_ar.includes('رواتب') || a.account_code === '5100');
-            if (salariesAcc) setFormData(prev => ({ ...prev, basicSalaryAccountId: salariesAcc.id }));
-        }
-    }, [expenseAccounts]);
+    const totalEarnings = formData.lines.filter(l => l.type === 'earning').reduce((sum, l) => sum + l.amount, 0);
+    const totalDeductions = formData.lines.filter(l => l.type === 'deduction').reduce((sum, l) => sum + l.amount, 0);
+    const netSalary = totalEarnings - totalDeductions;
+
+    const addLine = (type: 'earning' | 'deduction') => {
+        setFormData({
+            ...formData,
+            lines: [...formData.lines, { id: Math.random().toString(), accountId: '', description: '', amount: 0, type }]
+        });
+    };
+
+    const removeLine = (id: string) => {
+        setFormData({ ...formData, lines: formData.lines.filter(l => l.id !== id) });
+    };
+
+    const updateLine = (id: string, updates: Partial<PayslipLine>) => {
+        setFormData({
+            ...formData,
+            lines: formData.lines.map(l => l.id === id ? { ...l, ...updates } : l)
+        });
+    };
 
     const handleSubmit = async (isDraft: boolean) => {
-        if (!formData.employeeId) {
-            toast({ title: 'خطأ', description: 'يجب اختيار موظف', variant: 'destructive' });
-            return;
-        }
-
-        // Validation for Post
-        if (!isDraft) {
-            if (!formData.basicSalaryAccountId) {
-                toast({ title: 'خطأ', description: 'يجب اختيار حساب الراتب الأساسي', variant: 'destructive' });
-                return;
-            }
-            if (formData.absence > 0 && (!formData.absenceAccountId || formData.absenceAccountId === 'none')) {
-                toast({ title: 'خطأ', description: 'يجب اختيار حساب لخصم الغياب لضمان توازن القيد', variant: 'destructive' });
-                return;
-            }
-            if (formData.advances > 0 && !formData.advancesAccountId) {
-                toast({ title: 'خطأ', description: 'يجب اختيار حساب السلف', variant: 'destructive' });
-                return;
-            }
-        }
+        if (!formData.employeeId) return toast({ title: 'خطأ', description: 'يجب اختيار موظف', variant: 'destructive' });
+        if (formData.lines.some(l => !l.accountId || l.amount <= 0)) return toast({ title: 'خطأ', description: 'يجب ملء كافة الحسابات والمبالغ في الأسطر', variant: 'destructive' });
 
         setLoading(true);
         try {
+            const employee = employees.find(e => e.id === formData.employeeId);
             await createPayslip({
                 employeeId: formData.employeeId,
+                employeeName: employee?.name_ar || 'Unknown',
                 period: formData.month,
                 paymentDate: formData.paymentDate,
-
-                basicSalary: formData.basicSalary,
-                basicSalaryAccountId: formData.basicSalaryAccountId,
-
-                overtime: formData.overtime,
-                overtimeAccountId: formData.overtimeAccountId,
-
-                absence: formData.absence,
-                absenceAccountId: formData.absenceAccountId || undefined,
-
-                advances: formData.advances,
-                advancesAccountId: formData.advancesAccountId,
-
-                otherDeductions: formData.otherDeductions,
-                notes: formData.notes
-            }, isDraft);
-
-            toast({
-                title: isDraft ? 'تم الحفظ' : 'تم الاعتماد',
-                description: isDraft ? 'تم حفظ مسودة القسيمة بنجاح' : 'تم اعتماد القسيمة وترحيل القيد بنجاح'
+                basicSalary: formData.lines.find(l => l.description.includes('أساسي'))?.amount || 0,
+                netSalary,
+                isDraft,
+                lines: formData.lines.map(({ id, ...rest }) => rest)
             });
 
-            // Reset crucial fields
-            setFormData(prev => ({
-                ...prev,
-                overtime: 0, absence: 0, advances: 0, otherDeductions: 0,
-            }));
-
+            toast({ title: isDraft ? 'تم الحفظ' : 'تم الاعتماد' });
+            if (!isDraft) router.push('/accounting/payroll/history');
         } catch (error: any) {
-            console.error(error);
-            toast({ title: 'خطأ', description: error.message || 'حدث خطأ ما', variant: 'destructive' });
+            toast({ title: 'خطأ', description: error.message, variant: 'destructive' });
         } finally {
             setLoading(false);
         }
@@ -217,14 +94,20 @@ export default function PayrollPage() {
 
     return (
         <div className="space-y-6 max-w-4xl mx-auto pb-20">
-            <div className="flex items-center gap-4">
-                <Button variant="ghost" size="icon" onClick={() => router.back()}>
-                    <ArrowLeft className="h-5 w-5" />
-                </Button>
-                <div>
-                    <h1 className="text-2xl font-bold">إعداد الرواتب (Payroll)</h1>
-                    <p className="text-slate-500">إنشاء قسائم الرواتب الشهرية</p>
+            <div className="flex items-center justify-between gap-4">
+                <div className="flex items-center gap-4">
+                    <Button variant="ghost" size="icon" onClick={() => router.back()}>
+                        <ArrowLeft className="h-5 w-5" />
+                    </Button>
+                    <div>
+                        <h1 className="text-2xl font-bold">إعداد الرواتب (Payroll)</h1>
+                        <p className="text-slate-500">إنشاء قسائم الرواتب الشهرية</p>
+                    </div>
                 </div>
+                <Button variant="outline" className="gap-2" onClick={() => router.push('/accounting/payroll/history')}>
+                    <History className="w-4 h-4" />
+                    تاريخ القسائم
+                </Button>
             </div>
 
             <Card>
@@ -235,16 +118,14 @@ export default function PayrollPage() {
                     </CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-6">
-                    {/* الأساسيات */}
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                         <div className="space-y-2">
                             <Label>الموظف</Label>
-                            <AccountCombobox
-                                items={employees}
+                            <AccountSelector
+                                accounts={employees}
                                 value={formData.employeeId}
                                 onChange={(v) => setFormData({ ...formData, employeeId: v })}
                                 placeholder="اختر الموظف..."
-                                searchPlaceholder="بحث عن موظف..."
                             />
                         </div>
                         <div className="space-y-2">
@@ -256,7 +137,7 @@ export default function PayrollPage() {
                             />
                         </div>
                         <div className="space-y-2">
-                            <Label>تاريخ القيد</Label>
+                            <Label>تاريخ القيد (التحويل)</Label>
                             <Input
                                 type="date"
                                 value={formData.paymentDate}
@@ -265,116 +146,95 @@ export default function PayrollPage() {
                         </div>
                     </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                        {/* الاستحقاقات Earnings */}
-                        <div className="space-y-4 border rounded-lg p-4 bg-emerald-50/50">
-                            <h3 className="font-semibold text-emerald-700 flex items-center gap-2">
-                                <Plus className="w-4 h-4" /> الاستحقاقات
-                            </h3>
-
-                            <div className="space-y-2">
-                                <Label className="text-xs text-slate-500">الراتب الأساسي</Label>
-                                <div className="flex gap-2">
-                                    <Input
-                                        type="number" className="flex-1" placeholder="0.00"
-                                        value={formData.basicSalary}
-                                        onChange={e => setFormData({ ...formData, basicSalary: Number(e.target.value) })}
-                                    />
-                                    <div className="w-[200px]">
-                                        <AccountCombobox
-                                            items={expenseAccounts}
-                                            value={formData.basicSalaryAccountId}
-                                            onChange={v => setFormData({ ...formData, basicSalaryAccountId: v })}
-                                            placeholder="حساب المصروف"
-                                        />
-                                    </div>
-                                </div>
-                            </div>
-
-                            <div className="space-y-2">
-                                <Label className="text-xs text-slate-500">الإضافي</Label>
-                                <div className="flex gap-2">
-                                    <Input
-                                        type="number" className="flex-1" placeholder="0.00"
-                                        value={formData.overtime}
-                                        onChange={e => setFormData({ ...formData, overtime: Number(e.target.value) })}
-                                    />
-                                    <div className="w-[200px]">
-                                        <AccountCombobox
-                                            items={expenseAccounts}
-                                            value={formData.overtimeAccountId}
-                                            onChange={v => setFormData({ ...formData, overtimeAccountId: v })}
-                                            placeholder="حساب المصروف"
-                                        />
-                                    </div>
-                                </div>
+                    <div className="space-y-4">
+                        <div className="flex justify-between items-center bg-slate-50 p-2 rounded">
+                            <h3 className="font-bold text-slate-700">بنود الراتب</h3>
+                            <div className="flex gap-2">
+                                <Button size="sm" variant="outline" className="text-emerald-600 border-emerald-200" onClick={() => addLine('earning')}>
+                                    <Plus className="w-3 h-3 mr-1" /> إضافة استحقاق
+                                </Button>
+                                <Button size="sm" variant="outline" className="text-red-600 border-red-200" onClick={() => addLine('deduction')}>
+                                    <Plus className="w-3 h-3 mr-1" /> إضافة استقطاع
+                                </Button>
                             </div>
                         </div>
 
-                        {/* الاستقطاعات Deductions */}
-                        <div className="space-y-4 border rounded-lg p-4 bg-red-50/50">
-                            <h3 className="font-semibold text-red-700 flex items-center gap-2">
-                                <Wallet className="w-4 h-4" /> الاستقطاعات
-                            </h3>
-
-                            <div className="space-y-2">
-                                <Label className="text-xs text-slate-500">غياب / جزاءات</Label>
-                                <div className="flex gap-2">
-                                    <Input
-                                        type="number" className="flex-1" placeholder="0.00"
-                                        value={formData.absence}
-                                        onChange={e => setFormData({ ...formData, absence: Number(e.target.value) })}
-                                    />
-                                    <div className="w-[200px]">
-                                        <AccountCombobox
-                                            items={expenseAccounts} // Usually same as salary expense to reverse it
-                                            value={formData.absenceAccountId}
-                                            onChange={v => setFormData({ ...formData, absenceAccountId: v })}
-                                            placeholder="حساب الخصم"
-                                        />
-                                    </div>
-                                </div>
-                            </div>
-
-                            <div className="space-y-2">
-                                <Label className="text-xs text-slate-500">سلف</Label>
-                                <div className="flex gap-2">
-                                    <Input
-                                        type="number" className="flex-1" placeholder="0.00"
-                                        value={formData.advances}
-                                        onChange={e => setFormData({ ...formData, advances: Number(e.target.value) })}
-                                    />
-                                    <div className="w-[200px]">
-                                        <AccountCombobox
-                                            items={assetAccounts}
-                                            value={formData.advancesAccountId}
-                                            onChange={v => setFormData({ ...formData, advancesAccountId: v })}
-                                            placeholder="حساب السلف"
-                                        />
-                                    </div>
-                                </div>
-                            </div>
-
-                            <div className="space-y-2">
-                                <Label className="text-xs text-slate-500">أخرى (يجب اختيار حساب غياب لها حالياً)</Label>
-                                <Input
-                                    type="number" placeholder="0.00"
-                                    value={formData.otherDeductions}
-                                    onChange={e => setFormData({ ...formData, otherDeductions: Number(e.target.value) })}
-                                />
-                            </div>
+                        <div className="border rounded-lg overflow-hidden">
+                            <table className="w-full text-sm">
+                                <thead className="bg-slate-50 border-b">
+                                    <tr>
+                                        <th className="px-4 py-2 text-right">النوع</th>
+                                        <th className="px-4 py-2 text-right">الحساب</th>
+                                        <th className="px-4 py-2 text-right">البيان</th>
+                                        <th className="px-4 py-2 text-right">المبلغ</th>
+                                        <th className="px-4 py-2"></th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {formData.lines.map((line) => (
+                                        <tr key={line.id} className="border-b last:border-0">
+                                            <td className="px-4 py-2 w-32">
+                                                <span className={cn(
+                                                    "px-2 py-0.5 rounded-full text-[10px] font-bold",
+                                                    line.type === 'earning' ? "bg-emerald-100 text-emerald-700" : "bg-red-100 text-red-700"
+                                                )}>
+                                                    {line.type === 'earning' ? 'استحقاق (+)' : 'استقطاع (-)'}
+                                                </span>
+                                            </td>
+                                            <td className="px-4 py-2 w-64">
+                                                <AccountSelector
+                                                    accounts={accounts}
+                                                    value={line.accountId}
+                                                    onChange={(v) => updateLine(line.id, { accountId: v })}
+                                                    className="h-9 py-1"
+                                                />
+                                            </td>
+                                            <td className="px-4 py-2">
+                                                <Input
+                                                    value={line.description}
+                                                    onChange={e => updateLine(line.id, { description: e.target.value })}
+                                                    className="h-9"
+                                                    placeholder="وصف البند..."
+                                                />
+                                            </td>
+                                            <td className="px-4 py-2 w-32">
+                                                <Input
+                                                    type="number"
+                                                    value={line.amount || ''}
+                                                    onChange={e => updateLine(line.id, { amount: Number(e.target.value) })}
+                                                    className="h-9 font-mono font-bold"
+                                                    placeholder="0.00"
+                                                />
+                                            </td>
+                                            <td className="px-2 py-2 w-10">
+                                                <Button variant="ghost" size="icon" className="h-8 w-8 text-red-400 hover:text-red-600" onClick={() => removeLine(line.id)}>
+                                                    <Trash2 className="w-4 h-4" />
+                                                </Button>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
                         </div>
                     </div>
 
                     <div className="pt-6 border-t">
-                        <div className="flex justify-between items-center p-4 bg-slate-100 rounded-lg">
-                            <span className="font-semibold text-lg text-slate-700">صافي الراتب المستحق</span>
-                            <span className="font-bold text-2xl text-slate-900 font-mono">
-                                {formatCurrency(netSalary)}
-                            </span>
+                        <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-4">
+                            <div className="p-3 bg-emerald-50 rounded border border-emerald-100 text-center">
+                                <div className="text-xs text-emerald-600 mb-1">إجمالي الاستحقاقات</div>
+                                <div className="font-bold text-lg font-mono text-emerald-700">{formatCurrency(totalEarnings)}</div>
+                            </div>
+                            <div className="p-3 bg-red-50 rounded border border-red-100 text-center">
+                                <div className="text-xs text-red-600 mb-1">إجمالي الاستقطاعات</div>
+                                <div className="font-bold text-lg font-mono text-red-700">{formatCurrency(totalDeductions)}</div>
+                            </div>
+                            <div className="p-3 bg-blue-50 rounded border border-blue-100 text-center md:col-span-1 col-span-2">
+                                <div className="text-xs text-blue-600 mb-1">صافي الراتب المستحق</div>
+                                <div className="font-bold text-xl font-mono text-blue-800">{formatCurrency(netSalary)}</div>
+                            </div>
                         </div>
-                        <p className="text-xs text-slate-500 mt-2">
-                            * سيتم ترحيل الصافي إلى حساب الموظف (أجور مستحقة).
+                        <p className="text-xs text-slate-500">
+                            * سيتم ترحيل الصافي إلى حساب الموظف المختار (دائن بالصافي).
                         </p>
                     </div>
                 </CardContent>
@@ -386,14 +246,14 @@ export default function PayrollPage() {
                         disabled={loading}
                     >
                         <Save className="w-4 h-4 mr-2" />
-                        حفظ مسودة
+                        حفظ كمسودة (لمراجعة لاحقاً)
                     </Button>
                     <Button
-                        className="flex-[2] h-12 text-lg"
+                        className="flex-[2] h-12 text-lg bg-blue-600 hover:bg-blue-700"
                         onClick={() => handleSubmit(false)}
                         disabled={loading}
                     >
-                        {loading ? 'جاري التنفيذ...' : 'اعتماد وترحيل القيد'}
+                        {loading ? 'جاري التنفيذ...' : 'اعتماد وترحيل القيد المحاسبي'}
                     </Button>
                 </CardFooter>
             </Card>

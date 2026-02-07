@@ -2,12 +2,14 @@
 
 import { supabaseAdmin } from '@/lib/supabase-admin';
 import { revalidatePath } from 'next/cache';
+import { createPaymentAtomic, updatePaymentAtomic, deleteDocumentAtomic } from './atomic-actions';
 
 export interface Payment {
     id: string;
     date: string;
     reference: string;
     payee?: string;
+    relatedUserId?: string;
     paymentAccountId: string; // The Cash/Bank account PAYING money (Credit)
     paymentAccountName: string;
     description: string;
@@ -16,101 +18,36 @@ export interface Payment {
     lineItems: { accountId: string; amount: number; description?: string }[];
 }
 
-import { createJournalEntry } from './journal-actions';
-
 export async function createPayment(data: Omit<Payment, 'id' | 'reference'>) {
     try {
-        // 1. إنشاء قيد اليومية (The Source of Truth)
-        // المدين: حسابات المصروفات (Line Items)
-        // الدائن: حساب الدفع (Cash/Bank)
-
-        const journalLines = [
-            // Credit Line (حساب الدفع - دائن)
-            {
-                accountId: data.paymentAccountId,
-                credit: data.amount,
-                debit: 0,
-                description: `سند صرف: ${data.description}`
-            },
-            // Debit Lines (حسابات المصروف - مدين)
-            ...data.lineItems.map(item => ({
-                accountId: item.accountId,
-                debit: item.amount,
-                credit: 0,
-                description: item.description || data.description
-            }))
-        ];
-
-        // التحقق من توازن القيد يدوياً قبل الإرسال (اختياري، الدالة ستقوم به)
-        // استدعاء دالة إنشاء القيد
-        const { id: journalEntryId } = await createJournalEntry({
+        // Prepare Header
+        const header = {
             date: data.date,
-            description: `سند صرف للمستفيد: ${data.payee || 'غير محدد'} - ${data.description}`,
-            referenceType: 'payment',
-            lines: journalLines
-        });
+            boxAccountId: data.paymentAccountId, // The Credit Account (Cash/Bank) - Payer
+            notes: data.description,
+            supplier_id: data.relatedUserId || null,
+            payee_name: data.payee || null
+        };
 
-        // 2. إنشاء سند الصرف في جدول payments الجديد
-        // توليد رقم السند
-        const { count } = await supabaseAdmin.from('payments').select('*', { count: 'exact', head: true });
-        const paymentNumber = `PAY-${new Date().getFullYear()}-${String((count || 0) + 1).padStart(4, '0')}`;
-
-        const { data: newPayment, error: paymentError } = await supabaseAdmin.from('payments').insert({
-            payment_number: paymentNumber,
-            payment_date: data.date,
-            total_amount: data.amount,
-            payment_method: 'cash', // افتراضي، يمكن تحديثه لاحقاً
-            bank_account_id: data.paymentAccountId,
-            main_description: data.description,
-            journal_entry_id: journalEntryId,
-            status: 'posted'
-        }).select().single();
-
-        if (paymentError) throw new Error('فشل إنشاء سند الدفع: ' + paymentError.message);
-
-        // 3. إدخال تفاصيل السند (Lines)
-        if (data.lineItems.length > 0) {
-            const paymentLines = data.lineItems.map((item, index) => ({
-                payment_id: newPayment.id,
-                account_id: item.accountId,
+        // Prepare Lines (Debit Accounts - Expenses)
+        let lines: any[] = [];
+        if (data.lineItems && data.lineItems.length > 0) {
+            lines = data.lineItems.map(item => ({
+                accountId: item.accountId,
                 amount: item.amount,
-                description: item.description || '',
-                line_number: index + 1
+                description: item.description || data.description
             }));
-
-            const { error: linesError } = await supabaseAdmin.from('payment_lines').insert(paymentLines);
-            if (linesError) console.error('Warning: Failed to insert payment lines details', linesError);
+        } else {
+            throw new Error('يجب تحديد بنود الصرف');
         }
 
-        // 4. (Legacy Support) تحديث الأرصدة في الجداول القديمة إذا لزم الأمر
-        // سنعتمد الآن على Journal Entries لحساب الأرصدة، ولكن إذا كانت هناك جداول قديمة تعتمد على القيمة المخزنة:
-        // يمكننا ترك هذا الجزء أو تحديثه. للأمان، سنقوم بتحديث الرصيد الحالي للحساب في جدول accounts
-
-        /* 
-           تحديث رصيد الحساب المباشر (للعرض السريع)
-           Credit Account -> Decrease Balance (Asset) or Increase (Liability)
-           Assuming Payment Account is Asset (Cash/Bank) -> Decrease
-        */
-        const { error: balanceError } = await supabaseAdmin.rpc('decrement_balance', {
-            row_id: data.paymentAccountId,
-            amount: data.amount
-        });
-
-        // Fallback manual update
-        if (balanceError) {
-            const { data: acc } = await supabaseAdmin.from('accounts').select('current_balance').eq('id', data.paymentAccountId).single();
-            if (acc) {
-                await supabaseAdmin.from('accounts').update({
-                    current_balance: Number(acc.current_balance) - Number(data.amount)
-                }).eq('id', data.paymentAccountId);
-            }
-        }
+        const result = await createPaymentAtomic(header, lines);
 
         revalidatePath('/accounting/payments');
         revalidatePath('/accounting/dashboard');
         revalidatePath('/accounting/cash-bank');
 
-        return { success: true, id: newPayment.id };
+        return { success: true, id: result.id };
 
     } catch (e: any) {
         console.error('Create Payment Error:', e);
@@ -118,33 +55,41 @@ export async function createPayment(data: Omit<Payment, 'id' | 'reference'>) {
     }
 }
 
-export async function getPaymentById(id: string) {
+export async function getPaymentById(id: string): Promise<Payment | null> {
     try {
         const { data, error } = await supabaseAdmin
             .from('payments')
             .select(`
                 *,
-                bank_account:accounts!bank_account_id(id, name_ar, name_en, account_code, currency)
+                bank_account:accounts!bank_account_id(id, name_ar, name_en, account_code, currency),
+                lines:payment_lines(*)
             `)
             .eq('id', id)
             .single();
 
         if (error || !data) {
+            console.error('Error fetching payment:', error);
             return null;
         }
+
+        const lineItems = data.lines?.map((l: any) => ({
+            accountId: l.account_id,
+            amount: l.amount,
+            description: l.description
+        })) || [];
 
         return {
             id: data.id,
             date: data.payment_date,
             reference: data.payment_number,
-            payee: data.supplier_id ? `مورد ${data.supplier_id}` : '-',
-            relatedSupplierId: data.supplier_id,
+            payee: data.payee_name || (data.supplier_id ? `مورد ${data.supplier_id}` : '-'),
+            relatedUserId: data.supplier_id,
             paymentAccountId: data.bank_account_id,
             paymentAccountName: data.bank_account?.name_ar || data.bank_account?.name_en || 'غير محدد',
             description: data.main_description,
             amount: data.total_amount,
             currency: (data.bank_account?.currency || 'LYD') as 'LYD' | 'USD',
-            lineItems: []
+            lineItems: lineItems
         };
     } catch (e) {
         console.error('Error fetching payment:', e);
@@ -178,7 +123,7 @@ export async function getPayments(filters?: { query?: string; startDate?: string
         id: d.id,
         date: d.payment_date,
         reference: d.payment_number,
-        payee: d.supplier_id ? `مورد ${d.supplier_id}` : '-', // يمكن تحسين هذا لاحقاً بجلب اسم المورد
+        payee: d.payee_name || (d.supplier_id ? `مورد ${d.supplier_id}` : '-'),
         paymentAccountId: d.bank_account_id,
         paymentAccountName: d.bank_account?.name_ar || d.bank_account?.name_en || 'غير محدد',
         description: d.main_description,
@@ -190,45 +135,7 @@ export async function getPayments(filters?: { query?: string; startDate?: string
 
 export async function deletePayment(id: string) {
     try {
-        // 1. جلب السند للحصول على معرف القيد اليومي
-        const { data: payment, error: fetchError } = await supabaseAdmin
-            .from('payments')
-            .select('journal_entry_id')
-            .eq('id', id)
-            .single();
-
-        if (fetchError || !payment) {
-            throw new Error('لم يتم العثور على سند الدفع');
-        }
-
-        // 2. حذف القيد اليومي المرتبط أولاً (بسبب foreign key)
-        if (payment.journal_entry_id) {
-            const { error: journalError } = await supabaseAdmin
-                .from('journal_entries')
-                .delete()
-                .eq('id', payment.journal_entry_id);
-
-            if (journalError) {
-                console.error('Error deleting journal entry:', journalError);
-                // نستمر في حذف السند حتى لو فشل حذف القيد
-            }
-        }
-
-        // 3. حذف سطور السند (payment_lines)
-        await supabaseAdmin
-            .from('payment_lines')
-            .delete()
-            .eq('payment_id', id);
-
-        // 4. حذف السند نفسه
-        const { error: deleteError } = await supabaseAdmin
-            .from('payments')
-            .delete()
-            .eq('id', id);
-
-        if (deleteError) {
-            throw new Error('فشل حذف سند الدفع: ' + deleteError.message);
-        }
+        await deleteDocumentAtomic(id, 'payment');
 
         revalidatePath('/accounting/payments');
         revalidatePath('/accounting/dashboard');
@@ -243,71 +150,28 @@ export async function deletePayment(id: string) {
 
 export async function updatePayment(id: string, data: Omit<Payment, 'id' | 'reference'>) {
     try {
-        // 1. Get existing payment
-        const { data: existingPayment, error: fetchError } = await supabaseAdmin
-            .from('payments')
-            .select('journal_entry_id')
-            .eq('id', id)
-            .single();
+        // Prepare Header
+        const header = {
+            date: data.date,
+            boxAccountId: data.paymentAccountId,
+            notes: data.description,
+            supplier_id: data.relatedUserId || null,
+            payee_name: data.payee || null
+        };
 
-        if (fetchError || !existingPayment) {
-            throw new Error('لم يتم العثور على السند');
+        // Prepare Lines
+        let lines: any[] = [];
+        if (data.lineItems && data.lineItems.length > 0) {
+            lines = data.lineItems.map(item => ({
+                accountId: item.accountId,
+                amount: item.amount,
+                description: item.description || data.description
+            }));
+        } else {
+            throw new Error('يجب تحديد بنود الصرف');
         }
 
-        // 2. Delete old journal entry
-        if (existingPayment.journal_entry_id) {
-            await supabaseAdmin
-                .from('journal_entries')
-                .delete()
-                .eq('id', existingPayment.journal_entry_id);
-        }
-
-        // 3. Create new journal entry
-        // 3. Create new journal entry
-        const { id: journalEntryId } = await createJournalEntry({
-            date: new Date(data.date).toISOString(),
-            description: data.description,
-            lines: [
-                {
-                    accountId: data.paymentAccountId,
-                    debit: data.amount,
-                    credit: 0,
-                    description: data.description
-                },
-                {
-                    accountId: data.paymentAccountId,
-                    debit: 0,
-                    credit: data.amount,
-                    description: data.description
-                }
-            ]
-        });
-
-        // 4. Add journal lines - NOT NEEDED AS RPC HANDLES IT? 
-        // Logic in createJournalEntry already creates lines. 
-        // The original code here was weird: creating lines manually AFTER createJournalEntry?
-        // Wait, the original code in updatePayment:
-        // createJournalEntry -> returns { entry } -> then inserts lines manually into 'journal_lines' (not journal_entry_lines?)
-        // The schema uses 'journal_entry_lines'. 'journal_lines' might be a typo or old table?
-        // Let's assume createJournalEntry handles lines (it definitely does now).
-        // So we REMOVE the manual line insertion here.
-
-        // 5. Update payment
-        const { error: updateError } = await supabaseAdmin
-            .from('payments')
-            .update({
-                payment_date: data.date,
-                total_amount: data.amount,
-                bank_account_id: data.paymentAccountId,
-                main_description: data.description,
-                journal_entry_id: journalEntryId,
-                updated_at: new Date().toISOString()
-            })
-            .eq('id', id);
-
-        if (updateError) {
-            throw new Error('فشل تحديث السند');
-        }
+        await updatePaymentAtomic(id, header, lines);
 
         revalidatePath('/accounting/payments');
         revalidatePath('/accounting/dashboard');

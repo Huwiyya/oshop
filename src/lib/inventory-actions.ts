@@ -32,33 +32,44 @@ export async function createInventoryItem(data: {
     item_code: string;
     name_ar: string;
     name_en?: string;
-    category?: string; // e.g., 'shein_cards'
+    category?: string;
     description?: string;
-    revenue_account_id?: string;
+    inventory_account_id?: string;
+    sales_account_id?: string;
     cogs_account_id?: string;
 }) {
-    // Get Inventory Account (Assets -> Inventory)
+    // Default Inventory Account (Assets -> Inventory)
     const { data: inventoryAcc } = await supabaseAdmin
         .from('accounts')
         .select('id')
-        .eq('account_code', '1130') // كود المخزون الثابت
+        .eq('account_code', '1130')
         .single();
 
-    // Get COGS Account (Expenses -> COGS)
+    // Default COGS Account (Expenses -> COGS)
     const { data: cogsAcc } = await supabaseAdmin
         .from('accounts')
         .select('id')
-        .eq('account_code', '5100') // كود تكلفة البضاعة المباعة
+        .eq('account_code', '5100')
+        .single();
+
+    // Default Sales Account (Revenue -> Sales)
+    const { data: salesAcc } = await supabaseAdmin
+        .from('accounts')
+        .select('id')
+        .eq('account_code', '4100')
         .single();
 
     const { data: newItem, error } = await supabaseAdmin
         .from('inventory_items')
         .insert({
-            ...data,
-            inventory_account_id: inventoryAcc?.id, // Link to GL
-            // Convert empty strings to null for foreign key constraints
+            item_code: data.item_code,
+            name_ar: data.name_ar,
+            name_en: data.name_en,
+            category: data.category,
+            description: data.description,
+            inventory_account_id: data.inventory_account_id && data.inventory_account_id !== '' ? data.inventory_account_id : inventoryAcc?.id,
             cogs_account_id: data.cogs_account_id && data.cogs_account_id !== '' ? data.cogs_account_id : cogsAcc?.id,
-            revenue_account_id: data.revenue_account_id && data.revenue_account_id !== '' ? data.revenue_account_id : null,
+            sales_account_id: data.sales_account_id && data.sales_account_id !== '' ? data.sales_account_id : salesAcc?.id,
             is_shein_card: data.category === 'cards',
             unit: data.category === 'cards' ? 'card' : 'piece'
         })
@@ -67,6 +78,32 @@ export async function createInventoryItem(data: {
 
     if (error) throw new Error(error.message);
     return newItem;
+}
+
+export async function updateInventoryItem(id: string, data: {
+    item_code?: string;
+    name_ar?: string;
+    name_en?: string;
+    category?: string;
+    description?: string;
+    inventory_account_id?: string;
+    sales_account_id?: string;
+    cogs_account_id?: string;
+    is_active?: boolean;
+}) {
+    const { data: updatedItem, error } = await supabaseAdmin
+        .from('inventory_items')
+        .update({
+            ...data,
+            is_shein_card: data.category ? data.category === 'cards' : undefined,
+            updated_at: new Date().toISOString()
+        })
+        .eq('id', id)
+        .select()
+        .single();
+
+    if (error) throw new Error(error.message);
+    return updatedItem;
 }
 
 // جلب البطاقات (Layers) لصنف معين
@@ -464,4 +501,23 @@ export async function createInventoryAdjustment(data: {
     }).eq('id', data.itemId);
 
     return true;
+}
+
+export async function transferInventory(data: {
+    sourceItemId: string;
+    targetItemId: string;
+    quantity: number;
+    date: string;
+    notes?: string;
+}) {
+    const { data: result, error } = await supabaseAdmin.rpc('transfer_inventory_item_rpc', {
+        p_source_item_id: data.sourceItemId,
+        p_target_item_id: data.targetItemId,
+        p_quantity: data.quantity,
+        p_date: data.date,
+        p_notes: data.notes || 'تحويل مخزني'
+    });
+
+    if (error) throw new Error(error.message);
+    return result;
 }

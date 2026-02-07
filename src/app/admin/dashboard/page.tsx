@@ -298,13 +298,6 @@ const AdminDashboardPage = () => {
                     <p className="text-muted-foreground mt-1">نظرة عامة على أداء النظام اليوم</p>
                 </div>
                 <div className="flex gap-2">
-                    <Button
-                        onClick={() => nextRouter.push('/accounting/dashboard')}
-                        className="bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl shadow-[0_0_20px_rgba(16,185,129,0.3)] gap-2"
-                    >
-                        <Calculator className="h-4 w-4" />
-                        لوحة المحاسبة
-                    </Button>
                     <Button className="bg-[#f7941d] hover:bg-[#d67e15] text-white rounded-xl shadow-[0_0_20px_rgba(247,148,29,0.3)]">
                         <Download className="ml-2 h-4 w-4" />
                         تصدير تقرير

@@ -8,7 +8,7 @@ CREATE OR REPLACE FUNCTION create_sales_invoice_rpc(
     invoice_data JSONB, -- { customerId, date, currency, rate, paidAmount, paymentAccountId, notes }
     items JSONB -- Array of { itemId, quantity, unitPrice, cost(optional) }
 )
-RETURNS JSONB AS $$
+RETURNS JSONB AS $func$
 DECLARE
     new_invoice_id TEXT;
     new_invoice_number TEXT;
@@ -90,7 +90,7 @@ BEGIN
             (item_rec->>'quantity')::DECIMAL * (item_rec->>'unitPrice')::DECIMAL
         );
 
-        -- 2. FIFO Logic
+        -- 2. Inventory Deduction Logic
         qty_needed := (item_rec->>'quantity')::DECIMAL;
         txn_cost := 0;
 
@@ -110,42 +110,72 @@ BEGIN
             SELECT id INTO revenue_account_id FROM accounts WHERE account_code = '4100'; -- Default Sales
         END IF;
 
-        -- Iterate Layers
-        FOR layer_rec IN 
-            SELECT * FROM inventory_layers 
-            WHERE item_id = (item_rec->>'itemId') AND remaining_quantity > 0 
-            ORDER BY created_at ASC
-        LOOP
-            IF qty_needed <= 0 THEN EXIT; END IF;
+        -- CHECK FOR SPECIFIC LAYERS (Cards)
+        IF (item_rec->'selectedLayerIds') IS NOT NULL AND jsonb_array_length(item_rec->'selectedLayerIds') > 0 THEN
+            -- Specific Selection Logic
+            FOR layer_id_text IN SELECT * FROM jsonb_array_elements_text(item_rec->'selectedLayerIds')
+            LOOP
+                -- Get Layer
+                SELECT * INTO layer_rec FROM inventory_layers WHERE id = layer_id_text;
+                
+                IF layer_rec.quantity IS NOT NULL THEN
+                    -- Deduct 1 (Cards are always 1 per ID usually, or we take 1 from that layer)
+                    UPDATE inventory_layers 
+                    SET remaining_quantity = remaining_quantity - 1 -- Assuming 1 unit per selected ID
+                    WHERE id = layer_id_text;
 
-            IF layer_rec.remaining_quantity >= qty_needed THEN
-                qty_deducted := qty_needed;
-            ELSE
-                qty_deducted := layer_rec.remaining_quantity;
+                    -- Accumulate Cost
+                    txn_cost := txn_cost + (1 * layer_rec.unit_cost);
+                    
+                    -- Record Transaction
+                    INSERT INTO inventory_transactions (
+                        item_id, transaction_type, transaction_date, quantity, 
+                        unit_cost, total_cost, layer_id, reference_type, reference_id, notes
+                    ) VALUES (
+                        item_rec->>'itemId', 'sale', (invoice_data->>'date')::DATE,
+                        1, layer_rec.unit_cost, layer_rec.unit_cost,
+                        layer_rec.id, 'sales_invoice', new_invoice_number, 'بيع بطاقة محددة'
+                    );
+                END IF;
+            END LOOP;
+        ELSE
+            -- FIFO Logic (Bulk Items)
+            FOR layer_rec IN 
+                SELECT * FROM inventory_layers 
+                WHERE item_id = (item_rec->>'itemId') AND remaining_quantity > 0 
+                ORDER BY created_at ASC
+            LOOP
+                IF qty_needed <= 0 THEN EXIT; END IF;
+
+                IF layer_rec.remaining_quantity >= qty_needed THEN
+                    qty_deducted := qty_needed;
+                ELSE
+                    qty_deducted := layer_rec.remaining_quantity;
+                END IF;
+
+                -- Deduct
+                UPDATE inventory_layers 
+                SET remaining_quantity = remaining_quantity - qty_deducted
+                WHERE id = layer_rec.id;
+
+                -- Calculate Cost
+                txn_cost := txn_cost + (qty_deducted * layer_rec.unit_cost);
+                qty_needed := qty_needed - qty_deducted;
+
+                -- Record Transaction
+                INSERT INTO inventory_transactions (
+                    item_id, transaction_type, transaction_date, quantity, 
+                    unit_cost, total_cost, layer_id, reference_type, reference_id
+                ) VALUES (
+                    item_rec->>'itemId', 'sale', (invoice_data->>'date')::DATE,
+                    qty_deducted, layer_rec.unit_cost, (qty_deducted * layer_rec.unit_cost),
+                    layer_rec.id, 'sales_invoice', new_invoice_number
+                );
+            END LOOP;
+            
+            IF qty_needed > 0 THEN
+                RAISE EXCEPTION 'Insufficient stock for item %', (item_rec->>'itemId');
             END IF;
-
-            -- Deduct
-            UPDATE inventory_layers 
-            SET remaining_quantity = remaining_quantity - qty_deducted
-            WHERE id = layer_rec.id;
-
-            -- Calculate Cost
-            txn_cost := txn_cost + (qty_deducted * layer_rec.unit_cost);
-            qty_needed := qty_needed - qty_deducted;
-
-            -- Record Transaction (Invisible to user usually, but good for audit)
-            INSERT INTO inventory_transactions (
-                item_id, transaction_type, transaction_date, quantity, 
-                unit_cost, total_cost, layer_id, reference_type, reference_id
-            ) VALUES (
-                item_rec->>'itemId', 'sale', (invoice_data->>'date')::DATE,
-                qty_deducted, layer_rec.unit_cost, (qty_deducted * layer_rec.unit_cost),
-                layer_rec.id, 'sales_invoice', new_invoice_number
-            );
-        END LOOP;
-
-        IF qty_needed > 0 THEN
-            RAISE EXCEPTION 'Insufficient stock for item %', (item_rec->>'itemId');
         END IF;
 
         total_cogs := total_cogs + txn_cost;
@@ -177,6 +207,11 @@ BEGIN
         SET unit_cost = txn_cost / (item_rec->>'quantity')::DECIMAL
         WHERE invoice_id = new_invoice_id AND item_id = (item_rec->>'itemId');
         
+        -- Update Inventory Quantity on Hand (Aggregate)
+        UPDATE inventory_items 
+        SET quantity_on_hand = quantity_on_hand - (item_rec->>'quantity')::DECIMAL
+        WHERE id = (item_rec->>'itemId');
+
     END LOOP;
 
     -- Update Total Cost on Invoice
@@ -193,7 +228,8 @@ BEGIN
             jsonb_build_array(
                 jsonb_build_object('accountId', invoice_data->>'customerId', 'description', 'فاتورة مبيعات', 'debit', total_amount, 'credit', 0)
             ) || revenue_lines
-        )
+        ),
+        true -- Hidden
     );
 
     -- 2. COGS Entry: Dr COGS / Cr Inventory
@@ -203,7 +239,8 @@ BEGIN
             'تكلفة مبيعات ' || new_invoice_number,
             'sales_cogs',
             new_invoice_number,
-            cogs_lines
+            cogs_lines,
+            true -- Hidden
         );
     END IF;
 
@@ -226,14 +263,14 @@ BEGIN
 EXCEPTION WHEN OTHERS THEN
     RAISE EXCEPTION 'Sales Invoice Creation Failed: %', SQLERRM;
 END;
-$$ LANGUAGE plpgsql;
+$func$ LANGUAGE plpgsql;
 
 -- 2. Create Purchase Invoice RPC
 CREATE OR REPLACE FUNCTION create_purchase_invoice_rpc(
     invoice_data JSONB, -- { supplierId, date, currency, rate, paidAmount, paymentAccountId, notes }
     items JSONB -- Array of { itemId, quantity, unitPrice, cardNumbers[]? }
 )
-RETURNS JSONB AS $$
+RETURNS JSONB AS $func$
 DECLARE
     new_invoice_id TEXT;
     new_invoice_number TEXT;
@@ -311,9 +348,9 @@ BEGIN
             LOOP
                 WITH new_layer AS (
                     INSERT INTO inventory_layers (
-                        item_id, purchase_date, quantity, remaining_quantity, unit_cost, card_number
+                        item_id, purchase_date, quantity, remaining_quantity, unit_cost, card_number, purchase_reference
                     ) VALUES (
-                        item_rec->>'itemId', (invoice_data->>'date')::DATE, 1, 1, (item_rec->>'unitPrice')::DECIMAL, card_num
+                        item_rec->>'itemId', (invoice_data->>'date')::DATE, 1, 1, (item_rec->>'unitPrice')::DECIMAL, card_num, new_invoice_number
                     ) RETURNING id
                 )
                 INSERT INTO inventory_transactions (
@@ -328,12 +365,13 @@ BEGIN
         ELSE
             WITH new_layer AS (
                 INSERT INTO inventory_layers (
-                    item_id, purchase_date, quantity, remaining_quantity, unit_cost
+                    item_id, purchase_date, quantity, remaining_quantity, unit_cost, purchase_reference
                 ) VALUES (
                     item_rec->>'itemId', (invoice_data->>'date')::DATE, 
                     (item_rec->>'quantity')::DECIMAL, 
                     (item_rec->>'quantity')::DECIMAL, 
-                    (item_rec->>'unitPrice')::DECIMAL
+                    (item_rec->>'unitPrice')::DECIMAL,
+                    new_invoice_number
                 ) RETURNING id
             )
             INSERT INTO inventory_transactions (
@@ -348,6 +386,7 @@ BEGIN
             );
         END IF;
 
+        -- Update Inventory Quantity on Hand (Aggregate)
         UPDATE inventory_items 
         SET quantity_on_hand = quantity_on_hand + (item_rec->>'quantity')::DECIMAL
         WHERE id = (item_rec->>'itemId');
@@ -367,7 +406,8 @@ BEGIN
             jsonb_build_array(
                 jsonb_build_object('accountId', inventory_account_id, 'description', 'استحواذ مخزون', 'debit', total_amount, 'credit', 0),
                 jsonb_build_object('accountId', supplier_account_id, 'description', 'استحقاق مورد', 'debit', 0, 'credit', total_amount)
-            )
+            ),
+            true -- Hidden
         );
     END IF;
 
@@ -389,14 +429,14 @@ BEGIN
 EXCEPTION WHEN OTHERS THEN
     RAISE EXCEPTION 'Purchase Invoice Creation Failed: %', SQLERRM;
 END;
-$$ LANGUAGE plpgsql;
+$func$ LANGUAGE plpgsql;
 
 -- 3. Void Sales Invoice RPC
 CREATE OR REPLACE FUNCTION void_sales_invoice_rpc(
     invoice_number_param TEXT,
     reason TEXT
 )
-RETURNS JSONB AS $$
+RETURNS JSONB AS $func$
 DECLARE
     inv_record RECORD;
     je_record RECORD;
@@ -477,7 +517,7 @@ BEGIN
 EXCEPTION WHEN OTHERS THEN
     RAISE EXCEPTION 'Void Sales Invoice Failed: %', SQLERRM;
 END;
-$$ LANGUAGE plpgsql;
+$func$ LANGUAGE plpgsql;
 
 
 -- 4. Void Purchase Invoice RPC
@@ -485,7 +525,7 @@ CREATE OR REPLACE FUNCTION void_purchase_invoice_rpc(
     invoice_number_param TEXT,
     reason TEXT
 )
-RETURNS JSONB AS $$
+RETURNS JSONB AS $func$
 DECLARE
     inv_record RECORD;
     je_record RECORD;
@@ -548,6 +588,6 @@ BEGIN
 EXCEPTION WHEN OTHERS THEN
     RAISE EXCEPTION 'Void Purchase Invoice Failed: %', SQLERRM;
 END;
-$$ LANGUAGE plpgsql;
+$func$ LANGUAGE plpgsql;
 
 

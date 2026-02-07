@@ -2,6 +2,7 @@
 
 import { supabaseAdmin } from '@/lib/supabase-admin';
 import { revalidatePath } from 'next/cache';
+import { createReceiptAtomic, updateReceiptAtomic, deleteDocumentAtomic } from './atomic-actions';
 
 export interface Receipt {
     id: string;
@@ -24,112 +25,50 @@ export interface Receipt {
 // For now, we will use the same 'journal_entries' but with a specific type flag or just dedicated table.
 // Let's stick to the plan: `accounting_transactions`.
 
-import { createJournalEntry } from './journal-actions';
+// ... Keep Interface Receipt ...
+
+// We need a place to store these transactions.
+// Plan: Create 'accounting_transactions' table later.
+// For now, we will use the same 'journal_entries' but with a specific type flag or just dedicated table.
+// Let's stick to the plan: `accounting_transactions`.
 
 export async function createReceipt(data: Omit<Receipt, 'id' | 'reference'>) {
     try {
-        // 1. إنشاء قيد اليومية (The Source of Truth)
-        // المدين: حساب القبض (Cash/Bank) - زيادة أصول
-        // الدائن: حساب الإيرادات أو العميل - زيادة إيرادات أو تسديد ذمة
+        // Prepare Header
+        const header = {
+            date: data.date,
+            boxAccountId: data.receiveAccountId, // The Debit Account (Cash/Bank)
+            notes: data.description
+        };
 
-        // Validation
-        if (!data.creditAccountId) {
-            throw new Error('يجب اختيار الحساب الدائن (العميل أو الإيراد)');
+        // Prepare Lines (Credit Accounts)
+        let lines: any[] = [];
+        if (data.lineItems && data.lineItems.length > 0) {
+            lines = data.lineItems.map(item => ({
+                accountId: item.accountId,
+                amount: item.amount,
+                description: item.description || data.description
+            }));
+        } else if (data.creditAccountId) {
+            // Legacy/Single-line fallback
+            lines.push({
+                accountId: data.creditAccountId,
+                amount: data.amount,
+                description: data.description
+            });
+        } else {
+            throw new Error('يجب تحديد بنود السند أو الحساب الدائن');
         }
 
-        const journalDate = new Date(data.date);
-
-        const { id: journalEntryId } = await createJournalEntry({
-            date: journalDate.toISOString(),
-            description: data.description,
-            lines: [
-                {
-                    accountId: data.receiveAccountId,
-                    debit: data.amount,
-                    credit: 0,
-                    description: data.description
-                },
-                {
-                    accountId: data.creditAccountId, // ✅ Corrected: Credit the chosen account
-                    debit: 0,
-                    credit: data.amount,
-                    description: data.description
-                }
-            ]
-        });
-
-        // 2. إضافة سطور القيد - REMOVED (Handled by RPC)
-
-        // 3. إنشاء سند القبض
-        const receiptNumber = `REC-${new Date().getFullYear()}-${String(Date.now()).slice(-4)}`;
-
-        const { data: newReceipt, error: receiptError } = await supabaseAdmin
-            .from('receipts')
-            .insert({
-                receipt_number: receiptNumber,
-                receipt_date: data.date,
-                customer_id: data.relatedUserId || null,
-                // We should probably store credit_account_id in receipts table too for reference,
-                // but for now relying on journal entry is okay or we can add it if schema supports it.
-                // Assuming schema might not have it yet, we rely on journal_entry_id.
-                total_amount: data.amount,
-                payment_method: 'cash',
-                bank_account_id: data.receiveAccountId,
-                main_description: data.description,
-                status: 'confirmed',
-                journal_entry_id: journalEntryId
-            })
-            .select()
-            .single();
-
-        if (receiptError || !newReceipt) {
-            throw new Error('Failed to create receipt record');
-        }
-
-        // 4. Update account balances
-        // Update Debit Account (Increase Asset)
-        if (data.receiveAccountId) {
-            const { data: acc } = await supabaseAdmin.from('accounts').select('current_balance').eq('id', data.receiveAccountId).single();
-            if (acc) {
-                await supabaseAdmin.from('accounts').update({
-                    current_balance: Number(acc.current_balance) + Number(data.amount)
-                }).eq('id', data.receiveAccountId);
-            }
-        }
-
-        // Update Credit Account (Decrease Asset for Customer OR Increase Revenue)
-        // Note: For Assets (Customers), Credit means decrease balance (he paid us).
-        // For Revenue, Credit means increase balance.
-        // The logic is generic: Credit adds to the "credit side".
-        // BUT current_balance storage depends on account type.
-        // Usually: Asset/Expense (+Debit), Liability/Equity/Revenue (+Credit).
-        // If we want to keep it simple, we let the "recalculate balances" script handle it,
-        // Or we replicate standard logic:
-        if (data.creditAccountId) {
-            const { data: acc } = await supabaseAdmin.from('accounts').select('current_balance, account_type_id').eq('id', data.creditAccountId).single();
-            // Optimization: We could check account normal balance to know if we add or sub,
-            // But for now let's just do a naive update or rely on a trigger/recalc.
-            // Given the system seems to use a signed balance or specific direction, let's look at previous code.
-            // It seems 'current_balance' is just a number.
-            // Let's SKIP updating credit account manually to avoid bugs, relying on Journal Entry is safer
-            // IF the system has a mechanism to calc balance from journals.
-            // Looking at step 4 above, it updates the Debit account.
-            // It's inconsistent to update one but not the other.
-            // Let's try to update it if possible.
-            if (acc) {
-                // Simplification: Just add to balance? Or subtract?
-                // Let's assume standard accounting:
-                // If it's Asset (User), Credit reduces balance.
-                // If it's Revenue, Credit increases balance.
-                // Without knowing the Type logic clearly, it's risky.
-                // I will add a TODO or try to implement if I know account type.
-            }
-        }
+        const result = await createReceiptAtomic(header, lines);
 
         revalidatePath('/accounting/receipts');
         revalidatePath('/accounting/dashboard');
         revalidatePath('/accounting/cash-bank');
-        return { success: true, id: newReceipt.id };
+
+        // RPC returns { success: true, id: ..., number: ... }
+        // We match the return type expected by UI
+        return { success: true, id: result.id };
 
     } catch (e: any) {
         console.error('Create Receipt Error:', e);
@@ -143,7 +82,8 @@ export async function getReceiptById(id: string) {
             .from('receipts')
             .select(`
                 *,
-                bank_account:accounts!bank_account_id(id, name_ar, name_en, account_code, currency)
+                bank_account:accounts!bank_account_id(id, name_ar, name_en, account_code, currency),
+                lines:receipt_lines(*)
             `)
             .eq('id', id)
             .single();
@@ -151,6 +91,15 @@ export async function getReceiptById(id: string) {
         if (error || !data) {
             return null;
         }
+
+        // Fetch lines if joined, or fetch separately if needed
+        // The query above fetches lines:receipt_lines(*)
+
+        const lineItems = data.lines?.map((l: any) => ({
+            accountId: l.account_id,
+            amount: l.amount,
+            description: l.description
+        })) || [];
 
         return {
             id: data.id,
@@ -163,7 +112,8 @@ export async function getReceiptById(id: string) {
             description: data.main_description,
             amount: data.total_amount,
             currency: (data.bank_account?.currency || 'LYD') as 'LYD' | 'USD',
-            lineItems: []
+            lineItems: lineItems,
+            creditAccountId: lineItems.length === 1 ? lineItems[0].accountId : undefined // For legacy compatibility
         };
     } catch (e) {
         console.error('Error fetching receipt:', e);
@@ -208,51 +158,13 @@ export async function getReceipts(filters?: { query?: string; startDate?: string
         description: d.main_description,
         amount: d.total_amount,
         currency: 'LYD',
-        lineItems: []
+        lineItems: [] // Optimization: Don't load lines for list view unless needed
     }));
 }
 
 export async function deleteReceipt(id: string) {
     try {
-        // 1. جلب السند للحصول على معرف القيد اليومي
-        const { data: receipt, error: fetchError } = await supabaseAdmin
-            .from('receipts')
-            .select('journal_entry_id')
-            .eq('id', id)
-            .single();
-
-        if (fetchError || !receipt) {
-            throw new Error('لم يتم العثور على سند القبض');
-        }
-
-        // 2. حذف القيد اليومي المرتبط أولاً (بسبب foreign key)
-        if (receipt.journal_entry_id) {
-            const { error: journalError } = await supabaseAdmin
-                .from('journal_entries')
-                .delete()
-                .eq('id', receipt.journal_entry_id);
-
-            if (journalError) {
-                console.error('Error deleting journal entry:', journalError);
-                // نستمر في حذف السند حتى لو فشل حذف القيد
-            }
-        }
-
-        // 3. حذف سطور السند (receipt_lines)
-        await supabaseAdmin
-            .from('receipt_lines')
-            .delete()
-            .eq('receipt_id', id);
-
-        // 4. حذف السند نفسه
-        const { error: deleteError } = await supabaseAdmin
-            .from('receipts')
-            .delete()
-            .eq('id', id);
-
-        if (deleteError) {
-            throw new Error('فشل حذف سند القبض: ' + deleteError.message);
-        }
+        await deleteDocumentAtomic(id, 'receipt');
 
         revalidatePath('/accounting/receipts');
         revalidatePath('/accounting/dashboard');
@@ -267,65 +179,32 @@ export async function deleteReceipt(id: string) {
 
 export async function updateReceipt(id: string, data: Omit<Receipt, 'id' | 'reference'>) {
     try {
-        // 1. Get existing receipt
-        const { data: existingReceipt, error: fetchError } = await supabaseAdmin
-            .from('receipts')
-            .select('journal_entry_id')
-            .eq('id', id)
-            .single();
+        // Prepare Header
+        const header = {
+            date: data.date,
+            boxAccountId: data.receiveAccountId,
+            notes: data.description
+        };
 
-        if (fetchError || !existingReceipt) {
-            throw new Error('لم يتم العثور على السند');
+        // Prepare Lines
+        let lines: any[] = [];
+        if (data.lineItems && data.lineItems.length > 0) {
+            lines = data.lineItems.map(item => ({
+                accountId: item.accountId,
+                amount: item.amount,
+                description: item.description || data.description
+            }));
+        } else if (data.creditAccountId) {
+            lines.push({
+                accountId: data.creditAccountId,
+                amount: data.amount,
+                description: data.description
+            });
+        } else {
+            throw new Error('يجب تحديد بنود السند');
         }
 
-        // 2. Delete old journal entry
-        if (existingReceipt.journal_entry_id) {
-            await supabaseAdmin
-                .from('journal_entries')
-                .delete()
-                .eq('id', existingReceipt.journal_entry_id);
-        }
-
-        // 3. Create new journal entry
-        // 3. Create new journal entry
-        const { id: journalEntryId } = await createJournalEntry({
-            date: new Date(data.date).toISOString(),
-            description: data.description,
-            lines: [
-                {
-                    accountId: data.receiveAccountId,
-                    debit: data.amount,
-                    credit: 0,
-                    description: data.description
-                },
-                {
-                    accountId: data.receiveAccountId,
-                    debit: 0,
-                    credit: data.amount,
-                    description: data.description
-                }
-            ]
-        });
-
-        // 4. Add journal lines - NOT NEEDED (Handled by RPC)
-
-        // 5. Update receipt
-        const { error: updateError } = await supabaseAdmin
-            .from('receipts')
-            .update({
-                receipt_date: data.date,
-                customer_id: data.relatedUserId || null,
-                total_amount: data.amount,
-                bank_account_id: data.receiveAccountId,
-                main_description: data.description,
-                journal_entry_id: journalEntryId,
-                updated_at: new Date().toISOString()
-            })
-            .eq('id', id);
-
-        if (updateError) {
-            throw new Error('فشل تحديث السند');
-        }
+        await updateReceiptAtomic(id, header, lines);
 
         revalidatePath('/accounting/receipts');
         revalidatePath('/accounting/dashboard');

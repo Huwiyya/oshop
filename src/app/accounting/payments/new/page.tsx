@@ -3,95 +3,83 @@
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { createPayment } from '@/lib/payment-actions';
-import { getCashAccounts, getBankAccounts } from '@/lib/accounting-actions';
-import { supabase } from '@/lib/supabase';
+import { getUsers } from '@/lib/actions';
 import { Card, CardContent, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { ArrowLeft, Check, ChevronsUpDown, Search } from 'lucide-react';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { ArrowRight, User, Trash2, ChevronsUpDown, Check } from 'lucide-react';
+import { cn, formatCurrency } from '@/lib/utils';
 import Link from 'next/link';
-import { cn } from '@/lib/utils';
-import {
-    Command,
-    CommandEmpty,
-    CommandGroup,
-    CommandInput,
-    CommandItem,
-    CommandList,
-} from "@/components/ui/command"
-import {
-    Popover,
-    PopoverContent,
-    PopoverTrigger,
-} from "@/components/ui/popover"
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
+import { AccountSelector } from '@/components/accounting/AccountSelector';
 
 export default function NewPaymentPage() {
     const router = useRouter();
     const [isLoading, setIsLoading] = useState(false);
-
-    const [paymentAccounts, setPaymentAccounts] = useState<any[]>([]); // Cash/Bank
-    const [allAccounts, setAllAccounts] = useState<any[]>([]); // For Expenses/Liabilities
+    const [accounts, setAccounts] = useState<any[]>([]);
+    const [users, setUsers] = useState<any[]>([]);
 
     // Form State
     const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
-
-    // Credit Side (The Payer)
-    const [paymentAccountId, setPaymentAccountId] = useState('');
-    const [openPaymentCombo, setOpenPaymentCombo] = useState(false);
-
-    // Debit Side (The Expense/liability)
-    const [targetAccountId, setTargetAccountId] = useState('');
-    const [openTargetCombo, setOpenTargetCombo] = useState(false);
-
+    const [paymentAccountId, setPaymentAccountId] = useState(''); // Credit Account (Cash/Bank)
     const [payee, setPayee] = useState('');
+    const [relatedUserId, setRelatedUserId] = useState('');
     const [description, setDescription] = useState('');
-    const [amount, setAmount] = useState('');
+    const [lineItems, setLineItems] = useState<{ accountId: string; amount: number; description: string }[]>([
+        { accountId: '', amount: 0, description: '' }
+    ]);
     const [currency, setCurrency] = useState<'LYD' | 'USD'>('LYD');
+    const [openPayee, setOpenPayee] = useState(false);
+
+    const selectedUser = users.find(u => u.id === relatedUserId);
 
     useEffect(() => {
         async function load() {
-            // 1. Get Payment Accounts (Cash/Bank)
-            const [cash, bank] = await Promise.all([getCashAccounts(), getBankAccounts()]);
-            setPaymentAccounts([...cash, ...bank]);
-
-            // 2. Get All Accounts (For selecting expense/liability)
-            // We fetch active, non-parent accounts
-            const { data } = await supabase
-                .from('accounts')
-                .select('id, name_ar, account_code, currency')
-                .eq('is_active', true)
-                .neq('is_parent', true)
-                .order('account_code');
-
-            if (data) setAllAccounts(data);
+            const { getAllAccounts } = await import('@/lib/accounting-actions');
+            const [allAccounts, usersList] = await Promise.all([
+                getAllAccounts(),
+                getUsers()
+            ]);
+            setAccounts(allAccounts);
+            setUsers(usersList);
         }
         load();
     }, []);
 
+    const totalAmount = lineItems.reduce((sum, item) => sum + item.amount, 0);
     const currencySymbol = currency === 'LYD' ? 'د.ل' : '$';
 
-    const handleSubmit = async () => {
-        if (!paymentAccountId || !amount || !targetAccountId) return;
-        setIsLoading(true);
+    const handleAddLine = () => {
+        setLineItems([...lineItems, { accountId: '', amount: 0, description: '' }]);
+    };
 
-        const targetAccountName = allAccounts.find(a => a.id === targetAccountId)?.name_ar || 'Unknown';
+    const handleRemoveLine = (index: number) => {
+        if (lineItems.length === 1) return;
+        setLineItems(lineItems.filter((_, i) => i !== index));
+    };
+
+    const handleLineChange = (index: number, field: string, value: any) => {
+        const newLines = [...lineItems];
+        newLines[index] = { ...newLines[index], [field]: value };
+        setLineItems(newLines);
+    };
+
+    const handleSubmit = async () => {
+        if (!paymentAccountId || totalAmount <= 0) return;
+        setIsLoading(true);
 
         const res = await createPayment({
             date,
             payee,
-            paymentAccountId,
+            paymentAccountId: paymentAccountId,
             paymentAccountName: '',
             description,
-            amount: Number(amount),
+            amount: totalAmount,
             currency,
-            lineItems: [
-                {
-                    accountId: targetAccountId,
-                    amount: Number(amount),
-                    description: description || `صرف إلى: ${targetAccountName}`
-                }
-            ]
+            lineItems: lineItems.filter(li => li.accountId && li.amount > 0)
         });
 
         if (res.success) {
@@ -103,183 +91,183 @@ export default function NewPaymentPage() {
         }
     };
 
-    const selectedPaymentAccount = paymentAccounts.find(a => a.id === paymentAccountId);
-    const selectedTargetAccount = allAccounts.find(a => a.id === targetAccountId);
-
     return (
-        <div className="max-w-3xl mx-auto space-y-6 pb-20">
+        <div className="max-w-4xl mx-auto space-y-6">
             <div className="flex items-center gap-4">
                 <Link href="/accounting/payments">
                     <Button variant="ghost" size="icon">
-                        <ArrowLeft className="w-5 h-5" />
+                        <ArrowRight className="w-4 h-4" />
                     </Button>
                 </Link>
-                <div>
-                    <h1 className="text-2xl font-bold">سند صرف جديد</h1>
-                    <p className="text-slate-500">إثبات مدفوعات نقدية أو بنكية</p>
-                </div>
+                <h1 className="text-2xl font-bold">سند صرف جديد</h1>
             </div>
 
             <Card>
                 <CardHeader>
-                    <CardTitle>تفاصيل المعاملة</CardTitle>
+                    <CardTitle>تفاصيل السند</CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-6">
-                    {/* التاريخ والحساب الدافع */}
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                        <div className="space-y-2">
-                            <Label>تاريخ السند</Label>
-                            <Input type="date" value={date} onChange={e => setDate(e.target.value)} />
-                        </div>
-
-                        <div className="space-y-2">
-                            <Label className="text-rose-600 font-semibold">حساب الدفع (الدائن - من أين؟)</Label>
-                            <Popover open={openPaymentCombo} onOpenChange={setOpenPaymentCombo}>
-                                <PopoverTrigger asChild>
-                                    <Button
-                                        variant="outline"
-                                        role="combobox"
-                                        aria-expanded={openPaymentCombo}
-                                        className="w-full justify-between"
-                                    >
-                                        {selectedPaymentAccount ? (
-                                            <div className="flex flex-col items-start text-left">
-                                                <span className="font-semibold">{selectedPaymentAccount.name}</span>
-                                                <span className="text-xs text-slate-500">{selectedPaymentAccount.currency}</span>
-                                            </div>
-                                        ) : (
-                                            "خزينة أو بنك..."
-                                        )}
-                                        <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-                                    </Button>
-                                </PopoverTrigger>
-                                <PopoverContent className="w-[300px] p-0">
-                                    <Command>
-                                        <CommandInput placeholder="بحث عن خزينة..." />
-                                        <CommandList>
-                                            <CommandEmpty>لا يوجد حساب.</CommandEmpty>
-                                            <CommandGroup>
-                                                {paymentAccounts.map((acc) => (
-                                                    <CommandItem
-                                                        key={acc.id}
-                                                        value={acc.id}
-                                                        onSelect={(currentValue) => {
-                                                            setPaymentAccountId(currentValue === paymentAccountId ? '' : currentValue);
-                                                            setOpenPaymentCombo(false);
-                                                        }}
-                                                    >
-                                                        <Check
-                                                            className={cn(
-                                                                "mr-2 h-4 w-4",
-                                                                paymentAccountId === acc.id ? "opacity-100" : "opacity-0"
-                                                            )}
-                                                        />
-                                                        {acc.name_ar || acc.name_en}
-                                                        <span className="ml-auto text-xs text-slate-400 bg-slate-100 px-1 rounded">{acc.currency}</span>
-                                                    </CommandItem>
-                                                ))}
-                                            </CommandGroup>
-                                        </CommandList>
-                                    </Command>
-                                </PopoverContent>
-                            </Popover>
-                        </div>
-                    </div>
-
-                    {/* الحساب المستفيد (المصروف) */}
-                    <div className="space-y-2">
-                        <Label className="text-emerald-600 font-semibold">توجيه الصرف (المدين - مصروف/مورد/أصل)</Label>
-                        <Popover open={openTargetCombo} onOpenChange={setOpenTargetCombo}>
-                            <PopoverTrigger asChild>
-                                <Button
-                                    variant="outline"
-                                    role="combobox"
-                                    aria-expanded={openTargetCombo}
-                                    className="w-full justify-between h-auto py-2"
-                                >
-                                    {selectedTargetAccount ? (
-                                        <div className="flex flex-col items-start text-left">
-                                            <div className="flex items-center gap-2">
-                                                <span className="font-bold text-emerald-700">{selectedTargetAccount.name_ar}</span>
-                                            </div>
-                                            <span className="text-xs text-slate-500 font-mono">CODE: {selectedTargetAccount.account_code}</span>
-                                        </div>
-                                    ) : (
-                                        <span className="text-slate-500 flex items-center gap-2"><Search className="w-4 h-4" /> ابحث عن حساب المصروف أو المورد...</span>
-                                    )}
-                                    <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-                                </Button>
-                            </PopoverTrigger>
-                            <PopoverContent className="w-[500px] p-0" align="start">
-                                <Command filter={(value, search) => {
-                                    const acc = allAccounts.find(a => a.id === value);
-                                    if (!acc) return 0;
-                                    const text = `${acc.account_code} ${acc.name_ar}`.toLowerCase();
-                                    return text.includes(search.toLowerCase()) ? 1 : 0;
-                                }}>
-                                    <CommandInput placeholder="بحث بالكود أو الاسم..." />
-                                    <CommandList>
-                                        <CommandEmpty>لا يوجد حساب بهذا الاسم.</CommandEmpty>
-                                        <CommandGroup className="max-h-[300px] overflow-auto">
-                                            {allAccounts.map((acc) => (
-                                                <CommandItem
-                                                    key={acc.id}
-                                                    value={acc.id}
-                                                    onSelect={(currentValue) => {
-                                                        setTargetAccountId(currentValue === targetAccountId ? "" : currentValue)
-                                                        setOpenTargetCombo(false)
-                                                    }}
-                                                >
-                                                    <Check
-                                                        className={cn(
-                                                            "mr-2 h-4 w-4",
-                                                            targetAccountId === acc.id ? "opacity-100" : "opacity-0"
-                                                        )}
-                                                    />
-                                                    <span className="font-mono text-slate-500 w-16">{acc.account_code}</span>
-                                                    <span>{acc.name_ar}</span>
-                                                </CommandItem>
-                                            ))}
-                                        </CommandGroup>
-                                    </CommandList>
-                                </Command>
-                            </PopoverContent>
-                        </Popover>
-                    </div>
-
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div className="space-y-2">
-                            <Label>اسم المستفيد (الجهة المستلمة)</Label>
-                            <Input placeholder="مثال: شركة الكهرباء، أحمد محمد..." value={payee} onChange={e => setPayee(e.target.value)} />
+                            <Label>التاريخ</Label>
+                            <Input type="date" value={date} onChange={e => setDate(e.target.value)} />
                         </div>
                         <div className="space-y-2">
-                            <Label>المبلغ ({currencySymbol})</Label>
-                            <Input
-                                type="number"
-                                step="0.001"
-                                className="text-lg font-bold text-rose-600"
-                                value={amount}
-                                onChange={e => setAmount(e.target.value)}
-                            />
+                            <Label>الحساب الدافع (من / Credit) - حساب الخزينة أو البنك</Label>
+                            <Select value={paymentAccountId} onValueChange={(val) => {
+                                setPaymentAccountId(val);
+                                const acc = accounts.find(a => a.id === val);
+                                if (acc) setCurrency(acc.currency);
+                            }}>
+                                <SelectTrigger>
+                                    <SelectValue placeholder="اختر حساب الخزينة أو البنك" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    {accounts
+                                        .filter(a => a.account_code.startsWith('111') || a.account_code.startsWith('1'))
+                                        .map(acc => (
+                                            <SelectItem key={acc.id} value={acc.id}>
+                                                {acc.name_ar || acc.name_en} ({acc.currency || 'LYD'})
+                                            </SelectItem>
+                                        ))}
+                                </SelectContent>
+                            </Select>
+                        </div>
+                    </div>
+
+                    <div className="p-4 bg-gray-50 dark:bg-white/5 rounded-lg border space-y-4">
+                        <div className="flex items-center gap-2 mb-2 text-primary font-semibold">
+                            <User className="w-4 h-4" />
+                            <span>بيانات المستلم (Payee)</span>
+                        </div>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div className="space-y-2">
+                                <Label>ربط بمستخدم النظام (اختياري)</Label>
+                                <Popover open={openPayee} onOpenChange={setOpenPayee}>
+                                    <PopoverTrigger asChild>
+                                        <Button variant="outline" role="combobox" className="w-full justify-between h-auto py-3">
+                                            {selectedUser ? selectedUser.name || selectedUser.username : "بحث عن مورد/موظف..."}
+                                            <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                                        </Button>
+                                    </PopoverTrigger>
+                                    <PopoverContent className="w-[350px] p-0" align="start">
+                                        <Command>
+                                            <CommandInput placeholder="ابحث بالاسم..." />
+                                            <CommandList>
+                                                <CommandEmpty>لم يتم العثور على نتيجة.</CommandEmpty>
+                                                <CommandGroup>
+                                                    {users.map((user) => (
+                                                        <CommandItem
+                                                            key={user.id}
+                                                            onSelect={() => {
+                                                                setRelatedUserId(user.id);
+                                                                setPayee(user.name || user.username || '');
+                                                                setOpenPayee(false);
+                                                            }}
+                                                        >
+                                                            <Check className={cn("mr-2 h-4 w-4", relatedUserId === user.id ? "opacity-100" : "opacity-0")} />
+                                                            <div className="flex flex-col">
+                                                                <span className="font-medium">{user.name || user.username}</span>
+                                                                <span className="text-xs text-muted-foreground">{user.username}</span>
+                                                            </div>
+                                                        </CommandItem>
+                                                    ))}
+                                                </CommandGroup>
+                                            </CommandList>
+                                        </Command>
+                                    </PopoverContent>
+                                </Popover>
+                            </div>
+                            <div className="space-y-2">
+                                <Label>الاسم في السند (Payee Name)</Label>
+                                <Input placeholder="أو ادخل الاسم يدوياً..." value={payee} onChange={e => setPayee(e.target.value)} />
+                            </div>
                         </div>
                     </div>
 
                     <div className="space-y-2">
-                        <Label>البيان (الوصف)</Label>
-                        <Input placeholder="شرح لسند الصرف..." value={description} onChange={e => setDescription(e.target.value)} />
+                        <Label>البيان العام (وصف السند)</Label>
+                        <Input placeholder="شرح عام لسند الصرف..." value={description} onChange={e => setDescription(e.target.value)} />
+                    </div>
+
+                    <div className="space-y-4 pt-4 border-t">
+                        <div className="flex justify-between items-center">
+                            <h3 className="font-semibold">بنود الصرف (Debit Distribution)</h3>
+                            <Button variant="outline" size="sm" onClick={handleAddLine} type="button">إضافة بند +</Button>
+                        </div>
+                        <div className="border rounded-md overflow-hidden">
+                            <table className="w-full text-sm">
+                                <thead className="bg-slate-50 border-b">
+                                    <tr>
+                                        <th className="px-4 py-2 text-right">الحساب المدين (إلى / Debit)</th>
+                                        <th className="px-4 py-2 text-right">البيان (اختياري)</th>
+                                        <th className="px-4 py-2 text-right w-32">المبلغ ({currencySymbol})</th>
+                                        <th className="px-4 py-2 text-center w-16"></th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {lineItems.map((line, index) => (
+                                        <tr key={index} className="border-b last:border-0">
+                                            <td className="p-2">
+                                                <AccountSelector
+                                                    accounts={accounts}
+                                                    value={line.accountId}
+                                                    onChange={(val) => handleLineChange(index, 'accountId', val)}
+                                                    onAccountSelected={(acc) => {
+                                                        if (line.description === '') {
+                                                            handleLineChange(index, 'description', description);
+                                                        }
+                                                    }}
+                                                />
+                                            </td>
+                                            <td className="p-2">
+                                                <Input
+                                                    placeholder="وصف لهذا البند..."
+                                                    value={line.description}
+                                                    onChange={e => handleLineChange(index, 'description', e.target.value)}
+                                                />
+                                            </td>
+                                            <td className="p-2">
+                                                <Input
+                                                    type="number"
+                                                    value={line.amount || ''}
+                                                    onChange={e => handleLineChange(index, 'amount', Number(e.target.value))}
+                                                    className="font-mono text-rose-600 font-bold"
+                                                />
+                                            </td>
+                                            <td className="p-2 text-center">
+                                                <Button
+                                                    variant="ghost"
+                                                    size="icon"
+                                                    onClick={() => handleRemoveLine(index)}
+                                                    className="text-red-500 h-8 w-8"
+                                                    disabled={lineItems.length === 1}
+                                                >
+                                                    <Trash2 className="w-4 h-4" />
+                                                </Button>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                                <tfoot className="bg-slate-50 font-bold">
+                                    <tr>
+                                        <td colSpan={2} className="px-4 py-2 text-left">إجمالي السند:</td>
+                                        <td className="px-4 py-2 text-rose-600 font-mono text-lg">{formatCurrency(totalAmount)}</td>
+                                        <td></td>
+                                    </tr>
+                                </tfoot>
+                            </table>
+                        </div>
                     </div>
                 </CardContent>
-                <CardFooter className="flex justify-end gap-2 border-t pt-4 bg-slate-50">
+                <CardFooter className="flex justify-end gap-2 border-t pt-4">
                     <Button variant="outline" onClick={() => router.back()}>إلغاء</Button>
-                    <Button
-                        onClick={handleSubmit}
-                        disabled={isLoading || !paymentAccountId || !amount || !targetAccountId}
-                        className="bg-rose-600 hover:bg-rose-700 min-w-[120px]"
-                    >
-                        {isLoading ? 'جاري الحفظ...' : 'حفظ السند'}
+                    <Button onClick={handleSubmit} disabled={isLoading || !paymentAccountId || totalAmount <= 0} className="bg-rose-600 hover:bg-rose-700">
+                        {isLoading ? 'جاري الحفظ...' : 'حفظ سند الصرف'}
                     </Button>
                 </CardFooter>
             </Card>
         </div>
     );
 }
+
