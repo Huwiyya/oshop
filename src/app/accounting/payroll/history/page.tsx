@@ -89,9 +89,20 @@ export default function PayrollHistoryPage() {
                                             {formatDate(slip.created_at)}
                                         </td>
                                         <td className="px-6 py-4 text-left">
-                                            <Button variant="ghost" size="sm" className="gap-2 text-blue-500">
-                                                عرض <ExternalLink className="w-3 h-3" />
-                                            </Button>
+                                            {slip.is_draft ? (
+                                                <Button
+                                                    variant="ghost"
+                                                    size="sm"
+                                                    className="gap-2 text-amber-600 hover:text-amber-700 hover:bg-amber-50"
+                                                    onClick={() => router.push(`/accounting/payroll?id=${slip.id}`)}
+                                                >
+                                                    تعديل <FileText className="w-3 h-3" />
+                                                </Button>
+                                            ) : (
+                                                <Button variant="ghost" size="sm" className="gap-2 text-blue-500">
+                                                    عرض <ExternalLink className="w-3 h-3" />
+                                                </Button>
+                                            )}
                                         </td>
                                     </tr>
                                 ))}

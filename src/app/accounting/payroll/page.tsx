@@ -7,18 +7,20 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { getEmployees, createPayslip, type PayslipLine } from '@/lib/payroll-actions';
+import { getEmployees, createPayslip, getPayslipById, type PayslipLine } from '@/lib/payroll-actions';
 import { getAllAccounts } from '@/lib/accounting-actions';
 import { useToast } from '@/components/ui/use-toast';
 import { formatCurrency, cn } from '@/lib/utils';
 import { ArrowLeft, Wallet, Calculator, FileText, Plus, Check, ChevronsUpDown, Save, Trash2, History } from 'lucide-react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { AccountSelector } from '@/components/accounting/AccountSelector';
 
 export default function PayrollPage() {
     const router = useRouter();
+    const searchParams = useSearchParams();
+    const slipId = searchParams.get('id');
     const { toast } = useToast();
     const [loading, setLoading] = useState(false);
     const [accounts, setAccounts] = useState<any[]>([]);
@@ -36,12 +38,28 @@ export default function PayrollPage() {
     useEffect(() => {
         Promise.all([
             getEmployees(),
-            getAllAccounts()
-        ]).then(([emps, accs]) => {
+            getAllAccounts(),
+            slipId ? getPayslipById(slipId) : Promise.resolve(null)
+        ]).then(([emps, accs, existingSlip]) => {
             setEmployees(emps || []);
             setAccounts(accs || []);
+
+            if (existingSlip) {
+                setFormData({
+                    employeeId: existingSlip.employee_id,
+                    month: `${existingSlip.period_year}-${existingSlip.period_month.toString().padStart(2, '0')}`,
+                    paymentDate: existingSlip.payment_date || new Date().toISOString().split('T')[0],
+                    lines: existingSlip.payroll_slip_lines.map((l: any) => ({
+                        id: l.id,
+                        accountId: l.account_id,
+                        description: l.description,
+                        amount: Number(l.amount),
+                        type: l.type as 'earning' | 'deduction'
+                    }))
+                });
+            }
         });
-    }, []);
+    }, [slipId]);
 
     const totalEarnings = formData.lines.filter(l => l.type === 'earning').reduce((sum, l) => sum + l.amount, 0);
     const totalDeductions = formData.lines.filter(l => l.type === 'deduction').reduce((sum, l) => sum + l.amount, 0);
@@ -73,6 +91,7 @@ export default function PayrollPage() {
         try {
             const employee = employees.find(e => e.id === formData.employeeId);
             await createPayslip({
+                slipId: slipId || undefined,
                 employeeId: formData.employeeId,
                 employeeName: employee?.name_ar || 'Unknown',
                 period: formData.month,
@@ -84,7 +103,7 @@ export default function PayrollPage() {
             });
 
             toast({ title: isDraft ? 'تم الحفظ' : 'تم الاعتماد' });
-            if (!isDraft) router.push('/accounting/payroll/history');
+            router.push('/accounting/payroll/history');
         } catch (error: any) {
             toast({ title: 'خطأ', description: error.message, variant: 'destructive' });
         } finally {
