@@ -22,7 +22,11 @@ export type DashboardSummary = {
     totalRevenue: number;
     totalExpenses: number;
     netIncome: number;
-    balanceCheck?: number; // للتحقق من توازن المعادلة المحاسبية
+    balanceCheck?: number;
+    cashAndBanks: number;
+    receivables: number;
+    payables: number;
+    inventory: number;
 };
 
 // جلب ملخص الحسابات حسب النوع (للمركز المالي وقائمة الدخل)
@@ -152,21 +156,32 @@ export async function getDashboardMetrics(fromDate?: string, toDate?: string): P
     // حساب صافي الدخل
     const netIncome = totalRevenue - totalExpenses;
 
-    // ✅ إصلاح محاسبي: حقوق الملكية = رأس المال + الأرباح المحتجزة + صافي الدخل
+    // حقوق الملكية = رأس المال + الأرباح المحتجزة + صافي الدخل
     const totalEquity = totalEquityBase + netIncome;
 
-    // ✅ التحقق من توازن المعادلة المحاسبية: الأصول = الالتزامات + حقوق الملكية
+    // التحقق من توازن المعادلة المحاسبية: الأصول = الالتزامات + حقوق الملكية
     const balanceCheck = totalAssets - (totalLiabilities + totalEquity);
 
-    // تنبيه في حالة عدم التوازن (مع هامش خطأ 0.01 للتقريب)
-    if (Math.abs(balanceCheck) > 0.01) {
-        console.warn('⚠️ المعادلة المحاسبية غير متوازنة!', {
-            totalAssets,
-            totalLiabilities,
-            totalEquity,
-            difference: balanceCheck
-        });
-    }
+    // Granular Summaries Logic
+    // Cash & Banks: Starts with 111 (Cash 1111, Banks 1112)
+    const cashAndBanks = summary.assets
+        .filter(acc => acc.account_code.startsWith('111'))
+        .reduce((sum, acc) => sum + (Number(acc.current_balance) || 0), 0);
+
+    // Receivables: Starts with 112
+    const receivables = summary.assets
+        .filter(acc => acc.account_code.startsWith('112'))
+        .reduce((sum, acc) => sum + (Number(acc.current_balance) || 0), 0);
+
+    // Inventory: Starts with 120
+    const inventory = summary.assets
+        .filter(acc => acc.account_code.startsWith('120'))
+        .reduce((sum, acc) => sum + (Number(acc.current_balance) || 0), 0);
+
+    // Payables: Starts with 211
+    const payables = summary.liabilities
+        .filter(acc => acc.account_code.startsWith('211'))
+        .reduce((sum, acc) => sum + (Number(acc.current_balance) || 0), 0);
 
     return {
         totalAssets,
@@ -175,7 +190,11 @@ export async function getDashboardMetrics(fromDate?: string, toDate?: string): P
         totalRevenue,
         totalExpenses,
         netIncome,
-        balanceCheck
+        balanceCheck,
+        cashAndBanks,
+        receivables,
+        payables,
+        inventory
     };
 }
 
@@ -214,54 +233,37 @@ export async function createEntity(data: {
     name_en?: string;
     type: 'customer' | 'supplier';
     currency: 'LYD' | 'USD';
-    phone?: string; // Optional: stored in description or separate table if needed
+    phone?: string;
 }) {
     const parentCode = data.type === 'customer' ? '1120' : '2110';
 
-    // 1. Get Parent
+    // 1. Get Parent ID
     const { data: parent } = await supabaseAdmin
         .from('accounts')
-        .select('id, account_code')
+        .select('id')
         .eq('account_code', parentCode)
         .single();
 
-    if (!parent) throw new Error('Parent account not found');
+    if (!parent) throw new Error('Parent account for entities not found');
 
-    // 2. Generate new Code (simple increment logic)
-    // In production, this should be more robust (e.g., atomic increment)
-    const { data: lastChild } = await supabaseAdmin
-        .from('accounts')
-        .select('account_code')
-        .eq('parent_id', parent.id)
-        .order('account_code', { ascending: false })
-        .limit(1)
-        .single();
-
-    let newCode;
-    if (lastChild) {
-        newCode = (parseInt(lastChild.account_code) + 1).toString();
-    } else {
-        newCode = parent.account_code + '001';
-    }
-
-    // 3. Create Account
-    const { data: newAccount, error } = await supabaseAdmin
-        .from('accounts')
-        .insert({
-            name_ar: data.name_ar,
-            name_en: data.name_en || data.name_ar,
-            account_code: newCode,
-            parent_id: parent.id,
-            account_type_id: data.type === 'customer' ? 'type_asset' : 'type_liability', // Assuming predefined IDs
-            level: 3,
-            is_parent: false,
-            currency: data.currency,
-            current_balance: 0
-        })
-        .select()
-        .single();
+    // 2. Create via RPC
+    const { data: newAccountId, error } = await supabaseAdmin.rpc('create_hierarchical_account_rpc', {
+        p_name_ar: data.name_ar,
+        p_name_en: data.name_en || data.name_ar,
+        p_parent_id: parent.id,
+        p_description: data.phone ? `Phone: ${data.phone}` : undefined,
+        p_currency: data.currency
+    });
 
     if (error) throw new Error(error.message);
+
+    // 3. Fetch and return
+    const { data: newAccount } = await supabaseAdmin
+        .from('accounts')
+        .select('*')
+        .eq('id', newAccountId)
+        .single();
+
     return newAccount;
 }
 
@@ -450,37 +452,22 @@ export async function getBankAccounts() {
 }
 
 export async function createBankAccount(data: { name: string; currency: 'LYD' | 'USD'; accountNumber?: string; bankName?: string }) {
-    // Parent 1112
-    const { data: parent } = await supabaseAdmin.from('accounts').select('id, account_code').eq('account_code', '1112').single();
+    // Parent 1112 for Banks
+    const { data: parent } = await supabaseAdmin.from('accounts').select('id').eq('account_code', '1112').single();
     if (!parent) throw new Error('Parent account "Banks" (1112) not found');
 
-    // Generate Code
-    const { data: lastChild } = await supabaseAdmin
-        .from('accounts')
-        .select('account_code')
-        .eq('parent_id', parent.id)
-        .order('account_code', { ascending: false })
-        .limit(1)
-        .single();
-
-    let newCode = parent.account_code + '001';
-    if (lastChild) newCode = (parseInt(lastChild.account_code) + 1).toString();
-
-    // Insert
-    const { data: newAccount, error } = await supabaseAdmin.from('accounts').insert({
-        name_ar: data.name,
-        name_en: data.name, // Use same for now
-        account_code: newCode,
-        parent_id: parent.id,
-        account_type_id: 'type_asset',
-        level: 3,
-        is_parent: false,
-        currency: data.currency,
-        current_balance: 0,
-        description: `Bank: ${data.bankName || ''} - Account: ${data.accountNumber || ''}`
-    }).select().single();
+    // Create via RPC
+    const { data: newAccountId, error } = await supabaseAdmin.rpc('create_hierarchical_account_rpc', {
+        p_name_ar: data.name,
+        p_name_en: data.name,
+        p_parent_id: parent.id,
+        p_description: `Bank: ${data.bankName || ''} - Account: ${data.accountNumber || ''}`,
+        p_currency: data.currency
+    });
 
     if (error) return { success: false, error: error.message };
+
+    const { data: newAccount } = await supabaseAdmin.from('accounts').select('*').eq('id', newAccountId).single();
     return { success: true, data: newAccount };
 }
 
@@ -498,37 +485,22 @@ export async function getCashAccounts() {
 }
 
 export async function createCashAccount(data: { name: string; currency: 'LYD' | 'USD'; description?: string }) {
-    // Parent 1111
-    const { data: parent } = await supabaseAdmin.from('accounts').select('id, account_code').eq('account_code', '1111').single();
+    // Parent 1111 for Cash
+    const { data: parent } = await supabaseAdmin.from('accounts').select('id').eq('account_code', '1111').single();
     if (!parent) throw new Error('Parent account "Cash" (1111) not found');
 
-    // Generate Code
-    const { data: lastChild } = await supabaseAdmin
-        .from('accounts')
-        .select('account_code')
-        .eq('parent_id', parent.id)
-        .order('account_code', { ascending: false })
-        .limit(1)
-        .single();
-
-    let newCode = parent.account_code + '001';
-    if (lastChild) newCode = (parseInt(lastChild.account_code) + 1).toString();
-
-    // Insert
-    const { data: newAccount, error } = await supabaseAdmin.from('accounts').insert({
-        name_ar: data.name,
-        name_en: data.name,
-        account_code: newCode,
-        parent_id: parent.id,
-        account_type_id: 'type_asset',
-        level: 3,
-        is_parent: false,
-        currency: data.currency,
-        current_balance: 0,
-        description: data.description
-    }).select().single();
+    // Create via RPC
+    const { data: newAccountId, error } = await supabaseAdmin.rpc('create_hierarchical_account_rpc', {
+        p_name_ar: data.name,
+        p_name_en: data.name,
+        p_parent_id: parent.id,
+        p_description: data.description,
+        p_currency: data.currency
+    });
 
     if (error) throw new Error(error.message);
+
+    const { data: newAccount } = await supabaseAdmin.from('accounts').select('*').eq('id', newAccountId).single();
     return newAccount;
 }
 
@@ -718,47 +690,16 @@ export async function createAccount(data: {
     description?: string;
     is_active?: boolean;
 }) {
-    // 1. Get Parent to inherit type/currency and generate code
-    const { data: parent } = await supabaseAdmin.from('accounts').select('*').eq('id', data.parent_id).single();
-    if (!parent) return { success: false, error: 'الحساب الرئيسي غير موجود' };
-
-    // 2. Generate Code
-    const { data: lastChild } = await supabaseAdmin
-        .from('accounts')
-        .select('account_code')
-        .eq('parent_id', data.parent_id)
-        .order('account_code', { ascending: false })
-        .limit(1)
-        .single();
-
-    let newCode;
-    if (lastChild) {
-        // Simple increment logic. 
-        // Note: JS numbers lose precision for very large codes, but accounting codes usually < 15 digits.
-        // Using BigInt just in case or string manipulation.
-        // Assuming code is numeric string.
-        newCode = (Number(lastChild.account_code) + 1).toString();
-    } else {
-        newCode = parent.account_code + '01';
-    }
-
-    // 3. Insert
-    const { error } = await supabaseAdmin.from('accounts').insert({
-        name_ar: data.name_ar,
-        name_en: data.name_en,
-        account_code: newCode,
-        parent_id: data.parent_id,
-        account_type_id: parent.account_type_id,
-        level: parent.level + 1,
-        is_parent: false,
-        is_active: data.is_active ?? true,
-        current_balance: 0, // Default 0
-        currency: parent.currency || 'LYD',
-        description: data.description
+    // Create via RPC
+    const { data: newAccountId, error } = await supabaseAdmin.rpc('create_hierarchical_account_rpc', {
+        p_name_ar: data.name_ar,
+        p_name_en: data.name_en || data.name_ar,
+        p_parent_id: data.parent_id,
+        p_description: data.description
     });
 
     if (error) return { success: false, error: error.message };
-    return { success: true };
+    return { success: true, id: newAccountId };
 }
 
 export async function deleteAccount(id: string) {

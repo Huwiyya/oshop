@@ -106,6 +106,7 @@ function PayrollContent() {
             });
 
             toast({ title: isDraft ? 'تم الحفظ' : 'تم الاعتماد' });
+            router.refresh();
             router.push('/accounting/payroll/history');
         } catch (error: any) {
             toast({ title: 'خطأ', description: error.message, variant: 'destructive' });

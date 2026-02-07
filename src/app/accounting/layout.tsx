@@ -44,7 +44,7 @@ const sidebarItems = [
     // المخزون والأصول
     { name: 'المخزون', href: '/accounting/inventory', icon: Package },
     { name: 'التحويلات المخزنية', href: '/accounting/transfers', icon: Package },
-    { name: 'الأصول الثابتة', href: '/accounting/fixed-assets', icon: Building2 },
+    { name: 'الأصول الثابتة', href: '/accounting/fixed-assets-v2', icon: Building2 },
 
     { name: 'التقارير المالية', href: '/accounting/financial-reports', icon: BarChart3 },
     { name: 'الإعدادات', href: '/accounting/settings', icon: Settings },

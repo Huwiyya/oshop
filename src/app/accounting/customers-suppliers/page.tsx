@@ -107,52 +107,76 @@ function EntitiesList({ entities, isLoading, type, onRefresh }: { entities: any[
     }
 
     return (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {entities.map((entity) => (
-                <Card
-                    key={entity.id}
-                    className="hover:shadow-md transition-shadow group border-slate-200 relative"
-                >
-                    <div className="absolute top-3 left-3 flex gap-1 z-10">
-                        <EditEntityDialog entity={entity} type={type} onSuccess={onRefresh} />
-                        <DeleteEntityDialog entity={entity} type={type} onSuccess={onRefresh} />
-                    </div>
-                    <CardContent
-                        className="p-5 cursor-pointer"
-                        onClick={() => router.push(`/accounting/customers-suppliers/${entity.id}`)}
-                    >
-                        <div className="flex justify-between items-start mb-4">
-                            <div className="flex items-center gap-3">
-                                <div className={`w-10 h-10 rounded-full flex items-center justify-center ${type === 'customer' ? 'bg-blue-100 text-blue-600' : 'bg-orange-100 text-orange-600'}`}>
-                                    {type === 'customer' ? <Users className="w-5 h-5" /> : <Truck className="w-5 h-5" />}
-                                </div>
-                                <div>
-                                    <h3 className="font-bold text-slate-900 line-clamp-1">{entity.name_ar}</h3>
-                                    <p className="text-xs text-slate-500 font-mono">{entity.account_code}</p>
-                                </div>
-                            </div>
-                            <span className="bg-slate-100 text-slate-600 text-xs px-2 py-1 rounded font-medium">
-                                {entity.currency}
-                            </span>
-                        </div>
-
-                        <div className="space-y-1">
-                            <p className="text-xs text-slate-500">الرصيد الحالي</p>
-                            <div className={`text-xl font-bold flex items-center gap-1 ${Number(entity.current_balance) < 0 ? 'text-red-600' : 'text-emerald-600'}`}>
-                                {formatCurrency(Math.abs(Number(entity.current_balance)))}
-                                <span className="text-xs font-normal text-slate-400">
-                                    {Number(entity.current_balance) >= 0 ? 'له' : 'عليه'}
-                                </span>
-                            </div>
-                        </div>
-
-                        <div className="mt-4 pt-4 border-t flex items-center justify-between text-sm text-slate-500 group-hover:text-blue-600 transition-colors">
-                            <span>عرض كشف الحساب</span>
-                            <ArrowRight className="w-4 h-4" />
-                        </div>
-                    </CardContent>
-                </Card>
-            ))}
+        <div className="bg-white rounded-lg border shadow-sm overflow-hidden">
+            <div className="overflow-x-auto">
+                <table className="w-full">
+                    <thead className="bg-slate-50 border-b">
+                        <tr>
+                            <th className="px-4 py-3 text-right text-sm font-semibold text-slate-700">الاسم</th>
+                            <th className="px-4 py-3 text-right text-sm font-semibold text-slate-700">رقم الحساب</th>
+                            <th className="px-4 py-3 text-right text-sm font-semibold text-slate-700">العملة</th>
+                            <th className="px-4 py-3 text-right text-sm font-semibold text-slate-700">الرصيد الحالي</th>
+                            <th className="px-4 py-3 text-center text-sm font-semibold text-slate-700">الإجراءات</th>
+                        </tr>
+                    </thead>
+                    <tbody className="divide-y">
+                        {entities.map((entity) => (
+                            <tr
+                                key={entity.id}
+                                className="hover:bg-slate-50 transition-colors cursor-pointer group"
+                                onClick={() => router.push(`/accounting/customers-suppliers/${entity.id}`)}
+                            >
+                                <td className="px-4 py-4">
+                                    <div className="flex items-center gap-3">
+                                        <div className={`w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 ${type === 'customer' ? 'bg-blue-100 text-blue-600' : 'bg-orange-100 text-orange-600'}`}>
+                                            {type === 'customer' ? <Users className="w-5 h-5" /> : <Truck className="w-5 h-5" />}
+                                        </div>
+                                        <div className="min-w-0">
+                                            <h3 className="font-semibold text-slate-900">{entity.name_ar}</h3>
+                                            {entity.name_en && (
+                                                <p className="text-sm text-slate-500 truncate">{entity.name_en}</p>
+                                            )}
+                                        </div>
+                                    </div>
+                                </td>
+                                <td className="px-4 py-4">
+                                    <span className="font-mono text-sm text-slate-600">{entity.account_code}</span>
+                                </td>
+                                <td className="px-4 py-4">
+                                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-700">
+                                        {entity.currency}
+                                    </span>
+                                </td>
+                                <td className="px-4 py-4">
+                                    <div className="flex flex-col">
+                                        <span className={`text-lg font-bold ${Number(entity.current_balance) < 0 ? 'text-red-600' : 'text-emerald-600'}`}>
+                                            {formatCurrency(Math.abs(Number(entity.current_balance)))}
+                                        </span>
+                                        <span className="text-xs text-slate-500">
+                                            {Number(entity.current_balance) >= 0 ? 'له' : 'عليه'}
+                                        </span>
+                                    </div>
+                                </td>
+                                <td className="px-4 py-4" onClick={(e) => e.stopPropagation()}>
+                                    <div className="flex items-center justify-center gap-1">
+                                        <EditEntityDialog entity={entity} type={type} onSuccess={onRefresh} />
+                                        <DeleteEntityDialog entity={entity} type={type} onSuccess={onRefresh} />
+                                        <Button
+                                            variant="ghost"
+                                            size="sm"
+                                            className="h-8 px-3 text-blue-600 hover:text-blue-700 hover:bg-blue-50"
+                                            onClick={() => router.push(`/accounting/customers-suppliers/${entity.id}`)}
+                                        >
+                                            <Wallet className="w-4 h-4 ml-1" />
+                                            كشف الحساب
+                                        </Button>
+                                    </div>
+                                </td>
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+            </div>
         </div>
     );
 }
@@ -299,8 +323,8 @@ function EditEntityDialog({ entity, type, onSuccess }: { entity: any, type: 'cus
 
     return (
         <Dialog open={open} onOpenChange={setOpen}>
-            <DialogTrigger asChild onClick={(e) => e.stopPropagation()}>
-                <Button variant="ghost" size="sm" className="h-8 w-8 p-0 bg-white/80 hover:bg-white">
+            <DialogTrigger asChild>
+                <Button variant="ghost" size="sm" className="h-8 w-8 p-0 hover:bg-blue-50">
                     <Pencil className="w-4 h-4 text-blue-600" />
                 </Button>
             </DialogTrigger>
@@ -380,8 +404,8 @@ function DeleteEntityDialog({ entity, type, onSuccess }: { entity: any, type: 'c
 
     return (
         <AlertDialog>
-            <AlertDialogTrigger asChild onClick={(e) => e.stopPropagation()}>
-                <Button variant="ghost" size="sm" className="h-8 w-8 p-0 bg-white/80 hover:bg-white">
+            <AlertDialogTrigger asChild>
+                <Button variant="ghost" size="sm" className="h-8 w-8 p-0 hover:bg-red-50">
                     <Trash2 className="w-4 h-4 text-red-600" />
                 </Button>
             </AlertDialogTrigger>

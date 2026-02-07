@@ -108,14 +108,21 @@ export async function createPayslip(data: CreatePayslipData) {
 
     // If NOT Draft, Create Journal Entry
     if (!data.isDraft) {
+        // Payroll Journal Entry Logic:
+        // Debit: Salary Expense accounts (earnings)
+        // Credit: Deduction accounts (e.g., insurance, taxes)
+        // Credit: Employee Payable (net salary)
+
         const journalLines = data.lines.map(line => ({
             accountId: line.accountId,
             description: line.description,
+            // Earnings (salary, bonus) = DEBIT to expense account
+            // Deductions (insurance, taxes) = CREDIT to liability account
             debit: line.type === 'earning' ? line.amount : 0,
             credit: line.type === 'deduction' ? line.amount : 0
         }));
 
-        // Add Payable to Employee (Credit Net Salary)
+        // Add Payable to Employee (Credit Net Salary to liability account)
         journalLines.push({
             accountId: data.employeeId,
             description: `صافي راتب مستحق - ${data.period}`,
@@ -124,11 +131,11 @@ export async function createPayslip(data: CreatePayslipData) {
         });
 
         const { data: journalId, error: journalError } = await supabaseAdmin.rpc('create_journal_entry_rpc', {
-            entry_date: data.paymentDate,
-            description: `رواتب شهر ${data.period} - ${data.employeeName}`,
-            reference_type: 'payroll',
-            reference_id: result,
-            lines: journalLines
+            p_entry_date: data.paymentDate,
+            p_description: `رواتب شهر ${data.period} - ${data.employeeName}`,
+            p_reference_type: 'payroll',
+            p_reference_id: result,
+            p_lines: journalLines
         });
 
         if (journalError) throw new Error('فشل إنشاء قيد الرواتب: ' + journalError.message);

@@ -13,6 +13,7 @@ interface Account {
     name_en?: string;
     account_code: string;
     currency?: string;
+    level?: number;
 }
 
 interface AccountSelectorProps {
@@ -35,13 +36,18 @@ export function AccountSelector({
     const [open, setOpen] = useState(false);
     const selectedAccount = accounts.find(a => a.id === value);
 
-    const commonAccounts = accounts.filter(a =>
-        a.account_code.startsWith('5') ||
-        a.account_code.startsWith('4') ||
-        a.account_code.startsWith('2') ||
-        a.account_code.startsWith('121')
+    // Filter to show ONLY Level 4 (Analytical) accounts - the transaction level
+    const analyticalAccounts = accounts.filter(a => a.level === 4);
+
+    // Group by common categories for better UX
+    const commonAccounts = analyticalAccounts.filter(a =>
+        a.account_code.startsWith('5') ||  // Expenses
+        a.account_code.startsWith('4') ||  // Revenue
+        a.account_code.startsWith('211') || // Payables
+        a.account_code.startsWith('112')    // Receivables
     );
-    const otherAccounts = accounts.filter(a =>
+
+    const otherAccounts = analyticalAccounts.filter(a =>
         !commonAccounts.find(ca => ca.id === a.id)
     );
 
@@ -63,10 +69,10 @@ export function AccountSelector({
                 <Command>
                     <CommandInput placeholder="بحث عن حساب..." />
                     <CommandList>
-                        <CommandEmpty>لم يتم العثور على حساب.</CommandEmpty>
+                        <CommandEmpty>لم يتم العثور على حساب تحليلي.</CommandEmpty>
                         {commonAccounts.length > 0 && (
                             <CommandGroup heading="الحسابات الشائعة">
-                                {commonAccounts.slice(0, 20).map((account) => (
+                                {commonAccounts.map((account) => (
                                     <CommandItem
                                         key={account.id}
                                         onSelect={() => {
@@ -82,8 +88,8 @@ export function AccountSelector({
                                 ))}
                             </CommandGroup>
                         )}
-                        <CommandGroup heading="كافة الحسابات">
-                            {otherAccounts.slice(0, 50).map((account) => (
+                        <CommandGroup heading="كافة الحسابات التحليلية">
+                            {otherAccounts.map((account) => (
                                 <AccountItem
                                     key={account.id}
                                     account={account}

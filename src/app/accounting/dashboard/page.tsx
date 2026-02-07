@@ -14,7 +14,8 @@ import {
     CreditCard,
     TrendingUp,
     Calendar,
-    Filter
+    Filter,
+    BookOpen
 } from 'lucide-react';
 import { getDashboardMetrics, type DashboardSummary, type AccountSummary, getAccountsSummary } from '@/lib/accounting-actions';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -137,6 +138,38 @@ export default function AccountingDashboard() {
                     description="رأس المال + الأرباح المحتجزة + صافي الدخل"
                     color="purple"
                     href="/accounting/financial-reports"
+                />
+            </div>
+
+            {/* Summary Highlights */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                <SummaryCard
+                    title="النقدية والبنوك"
+                    value={metrics?.cashAndBanks || 0}
+                    icon={Wallet}
+                    color="blue"
+                    href="/accounting/cash-banks"
+                />
+                <SummaryCard
+                    title="مستحقات العملاء"
+                    value={metrics?.receivables || 0}
+                    icon={ArrowUpRight}
+                    color="emerald"
+                    href="/accounting/entities?type=customer"
+                />
+                <SummaryCard
+                    title="مستحقات الموردين"
+                    value={metrics?.payables || 0}
+                    icon={ArrowDownRight}
+                    color="red"
+                    href="/accounting/entities?type=supplier"
+                />
+                <SummaryCard
+                    title="قيمة المخزون"
+                    value={metrics?.inventory || 0}
+                    icon={BookOpen}
+                    color="orange"
+                    href="/accounting/inventory-reports"
                 />
             </div>
 
@@ -327,6 +360,35 @@ function MetricCard({ title, value, icon: Icon, trend, description, color, href 
 
     if (href) return <Link href={href}>{Content}</Link>;
     return Content;
+}
+
+function SummaryCard({ title, value, icon: Icon, color, href }: { title: string; value: number; icon: any; color: string; href: string }) {
+    const colorClasses = {
+        emerald: "bg-emerald-50 text-emerald-600 border-emerald-100",
+        blue: "bg-blue-50 text-blue-600 border-blue-100",
+        amber: "bg-amber-50 text-amber-600 border-amber-100",
+        purple: "bg-purple-50 text-purple-600 border-purple-100",
+        red: "bg-red-50 text-red-600 border-red-100",
+        orange: "bg-orange-50 text-orange-600 border-orange-100",
+    };
+
+    return (
+        <Link href={href}>
+            <Card className="border shadow-sm hover:shadow-md transition-shadow cursor-pointer hover:border-blue-300">
+                <CardContent className="p-4">
+                    <div className="flex items-center justify-between">
+                        <div className={`p-2 rounded-lg ${colorClasses[color as keyof typeof colorClasses]}`}>
+                            <Icon className="w-5 h-5" />
+                        </div>
+                        <div className="text-left flex-1 mr-3">
+                            <h3 className="text-xs font-medium text-slate-500 mb-1">{title}</h3>
+                            <div className="text-lg font-bold text-slate-900">{formatCurrency(value)}</div>
+                        </div>
+                    </div>
+                </CardContent>
+            </Card>
+        </Link>
+    );
 }
 
 function AccountRow({ account, router, type = 'normal' }: { account: AccountSummary, router: any, type?: 'normal' | 'expense' }) {

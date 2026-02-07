@@ -50,6 +50,7 @@ import {
 } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { Badge } from '@/components/ui/badge';
+import { cn } from '@/lib/utils';
 import { getAllAccounts, updateAccount, deleteAccount, toggleAccountStatus, createAccount, getAccountChildren } from '@/lib/accounting-actions';
 import { useToast } from '@/components/ui/use-toast';
 import {
@@ -118,11 +119,20 @@ const AccountRow = ({ account, expanded, onToggle, onEdit, onDelete, onToggleSta
                         <span className={`font-${level === 1 ? 'bold' : level === 2 ? 'semibold' : 'medium'} ${isInactive ? 'line-through decoration-slate-400' : ''}`}>
                             {account.name_ar}
                         </span>
-                        {account.is_parent && (
-                            <Badge variant="outline" className="text-xs">
-                                رئيسي
-                            </Badge>
-                        )}
+                        <Badge
+                            variant={account.level === 4 ? "default" : "outline"}
+                            className={cn(
+                                "text-[10px] px-1.5 h-5",
+                                account.level === 1 && "bg-slate-200 text-slate-700 border-slate-300",
+                                account.level === 2 && "bg-blue-50 text-blue-700 border-blue-200",
+                                account.level === 3 && "bg-indigo-50 text-indigo-700 border-indigo-200",
+                                account.level === 4 && "bg-emerald-600 text-white border-transparent"
+                            )}
+                        >
+                            {account.level === 1 ? 'رئيسي' :
+                                account.level === 2 ? 'تحت الرئيسي' :
+                                    account.level === 3 ? 'فرعي' : 'تحليلي'}
+                        </Badge>
                         {isInactive && (
                             <Badge variant="secondary" className="text-xs bg-slate-200 text-slate-600">
                                 غير نشط
@@ -586,20 +596,32 @@ export default function ChartOfAccountsPage() {
                             <Label>الحساب الرئيسي (الأب)</Label>
                             <Select
                                 value={newAccountForm.parent_id}
-                                onValueChange={(val) => setNewAccountForm({ ...newAccountForm, parent_id: val })}
+                                onValueChange={(val) => {
+                                    setNewAccountForm({ ...newAccountForm, parent_id: val });
+                                }}
                             >
                                 <SelectTrigger>
                                     <SelectValue placeholder="اختر الحساب الرئيسي..." />
                                 </SelectTrigger>
                                 <SelectContent className="max-h-[300px]">
-                                    {flatAccounts.map((acc) => (
+                                    {flatAccounts.filter(a => a.level < 4).map((acc) => (
                                         <SelectItem key={acc.id} value={acc.id}>
                                             <span className="font-mono text-slate-500 ml-2">{acc.account_code}</span>
                                             {acc.name_ar}
+                                            <span className="text-[10px] bg-slate-100 px-1 rounded mr-2">L{acc.level}</span>
                                         </SelectItem>
                                     ))}
                                 </SelectContent>
                             </Select>
+                            {newAccountForm.parent_id && (
+                                <div className="text-xs text-blue-600 bg-blue-50 p-2 rounded border border-blue-100 mt-1">
+                                    سيتم إنشاء حساب من المستوى
+                                    <span className="font-bold underline mx-1">
+                                        {(flatAccounts.find(a => a.id === newAccountForm.parent_id)?.level || 0) + 1}
+                                        ({(flatAccounts.find(a => a.id === newAccountForm.parent_id)?.level || 0) + 1 === 4 ? 'تحليلي' : 'رئيسي/فرعي'})
+                                    </span>
+                                </div>
+                            )}
                         </div>
                         <div className="space-y-2">
                             <Label>اسم الحساب (عربي)</Label>
