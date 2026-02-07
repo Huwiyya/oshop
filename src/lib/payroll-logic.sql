@@ -2,8 +2,9 @@
 -- Payroll System Refactoring - Schema Update
 -- ============================================
 
--- 1. Add is_draft column to payroll_slips
+-- 1. Add missing columns to payroll_slips
 ALTER TABLE payroll_slips ADD COLUMN IF NOT EXISTS is_draft BOOLEAN DEFAULT TRUE;
+ALTER TABLE payroll_slips ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();
 
 -- 2. Create payroll_slip_lines table
 CREATE TABLE IF NOT EXISTS payroll_slip_lines (
