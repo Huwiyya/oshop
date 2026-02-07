@@ -361,7 +361,10 @@ BEGIN
     -- 3. Delete Old Artifacts
     -- A. Delete Old Lines
     DELETE FROM receipt_lines WHERE receipt_id = p_id;
-    -- B. Delete Old JE
+    
+    -- B. Delete Old JE (must clear foreign key first!)
+    -- ✅ FIX: Clear journal_entry_id to avoid FK constraint violation
+    UPDATE receipts SET journal_entry_id = NULL WHERE id = p_id;
     DELETE FROM journal_entries WHERE reference_type = 'receipt' AND reference_id = rec_number;
 
     -- 4. Update Header
@@ -442,6 +445,9 @@ BEGIN
 
     -- 3. Delete Old
     DELETE FROM payment_lines WHERE payment_id = p_id;
+    
+    -- ✅ FIX: Clear journal_entry_id to avoid FK constraint violation  
+    UPDATE payments SET journal_entry_id = NULL WHERE id = p_id;
     DELETE FROM journal_entries WHERE reference_type = 'payment' AND reference_id = pay_number;
 
     -- 4. Update Header
