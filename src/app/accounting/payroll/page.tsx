@@ -11,7 +11,7 @@ import { getEmployees, createPayslip, getPayslipById, type PayslipLine } from '@
 import { getAllAccounts } from '@/lib/accounting-actions';
 import { useToast } from '@/components/ui/use-toast';
 import { formatCurrency, cn } from '@/lib/utils';
-import { ArrowLeft, Wallet, Calculator, FileText, Plus, Check, ChevronsUpDown, Save, Trash2, History } from 'lucide-react';
+import { ArrowLeft, Wallet, Calculator, FileText, Plus, Check, ChevronsUpDown, Save, Trash2, History, ExternalLink } from 'lucide-react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
@@ -21,6 +21,8 @@ function PayrollContent() {
     const router = useRouter();
     const searchParams = useSearchParams();
     const slipId = searchParams.get('id');
+    const isView = searchParams.get('view') === 'true';
+    const [journalId, setJournalId] = useState<string | null>(null);
     const { toast } = useToast();
     const [loading, setLoading] = useState(false);
     const [accounts, setAccounts] = useState<any[]>([]);
@@ -45,6 +47,7 @@ function PayrollContent() {
             setAccounts(accs || []);
 
             if (existingSlip) {
+                setJournalId(existingSlip.journal_entry_id);
                 setFormData({
                     employeeId: existingSlip.employee_id,
                     month: `${existingSlip.period_year}-${existingSlip.period_month.toString().padStart(2, '0')}`,
@@ -145,6 +148,7 @@ function PayrollContent() {
                                 value={formData.employeeId}
                                 onChange={(v) => setFormData({ ...formData, employeeId: v })}
                                 placeholder="اختر الموظف..."
+                                className={isView ? "bg-slate-50 opacity-100" : ""}
                             />
                         </div>
                         <div className="space-y-2">
@@ -153,6 +157,8 @@ function PayrollContent() {
                                 type="month"
                                 value={formData.month}
                                 onChange={e => setFormData({ ...formData, month: e.target.value })}
+                                disabled={isView}
+                                className={isView ? "bg-slate-50" : ""}
                             />
                         </div>
                         <div className="space-y-2">
@@ -161,6 +167,8 @@ function PayrollContent() {
                                 type="date"
                                 value={formData.paymentDate}
                                 onChange={e => setFormData({ ...formData, paymentDate: e.target.value })}
+                                disabled={isView}
+                                className={isView ? "bg-slate-50" : ""}
                             />
                         </div>
                     </div>
@@ -168,14 +176,16 @@ function PayrollContent() {
                     <div className="space-y-4">
                         <div className="flex justify-between items-center bg-slate-50 p-2 rounded">
                             <h3 className="font-bold text-slate-700">بنود الراتب</h3>
-                            <div className="flex gap-2">
-                                <Button size="sm" variant="outline" className="text-emerald-600 border-emerald-200" onClick={() => addLine('earning')}>
-                                    <Plus className="w-3 h-3 mr-1" /> إضافة استحقاق
-                                </Button>
-                                <Button size="sm" variant="outline" className="text-red-600 border-red-200" onClick={() => addLine('deduction')}>
-                                    <Plus className="w-3 h-3 mr-1" /> إضافة استقطاع
-                                </Button>
-                            </div>
+                            {!isView && (
+                                <div className="flex gap-2">
+                                    <Button size="sm" variant="outline" className="text-emerald-600 border-emerald-200" onClick={() => addLine('earning')}>
+                                        <Plus className="w-3 h-3 mr-1" /> إضافة استحقاق
+                                    </Button>
+                                    <Button size="sm" variant="outline" className="text-red-600 border-red-200" onClick={() => addLine('deduction')}>
+                                        <Plus className="w-3 h-3 mr-1" /> إضافة استقطاع
+                                    </Button>
+                                </div>
+                            )}
                         </div>
 
                         <div className="border rounded-lg overflow-hidden">
@@ -205,7 +215,7 @@ function PayrollContent() {
                                                     accounts={accounts}
                                                     value={line.accountId}
                                                     onChange={(v) => updateLine(line.id, { accountId: v })}
-                                                    className="h-9 py-1"
+                                                    className={cn("h-9 py-1", isView && "bg-slate-50 opacity-100 cursor-default pointer-events-none")}
                                                 />
                                             </td>
                                             <td className="px-4 py-2">
@@ -214,6 +224,7 @@ function PayrollContent() {
                                                     onChange={e => updateLine(line.id, { description: e.target.value })}
                                                     className="h-9"
                                                     placeholder="وصف البند..."
+                                                    disabled={isView}
                                                 />
                                             </td>
                                             <td className="px-4 py-2 w-32">
@@ -223,12 +234,15 @@ function PayrollContent() {
                                                     onChange={e => updateLine(line.id, { amount: Number(e.target.value) })}
                                                     className="h-9 font-mono font-bold"
                                                     placeholder="0.00"
+                                                    disabled={isView}
                                                 />
                                             </td>
                                             <td className="px-2 py-2 w-10">
-                                                <Button variant="ghost" size="icon" className="h-8 w-8 text-red-400 hover:text-red-600" onClick={() => removeLine(line.id)}>
-                                                    <Trash2 className="w-4 h-4" />
-                                                </Button>
+                                                {!isView && (
+                                                    <Button variant="ghost" size="icon" className="h-8 w-8 text-red-400 hover:text-red-600" onClick={() => removeLine(line.id)}>
+                                                        <Trash2 className="w-4 h-4" />
+                                                    </Button>
+                                                )}
                                             </td>
                                         </tr>
                                     ))}
@@ -255,26 +269,42 @@ function PayrollContent() {
                         <p className="text-xs text-slate-500">
                             * سيتم ترحيل الصافي إلى حساب الموظف المختار (دائن بالصافي).
                         </p>
+                        {journalId && (
+                            <div className="mt-4 p-3 bg-slate-50 border rounded-lg flex items-center justify-between">
+                                <span className="text-sm text-slate-600 font-medium">تم ترحيل هذه القسيمة إلى قيد يومية:</span>
+                                <Button variant="link" className="text-blue-600 font-mono font-bold h-auto p-0" onClick={() => router.push(`/accounting/journal-entries/${journalId}`)}>
+                                    #{journalId.slice(0, 8)} <ExternalLink className="w-3 h-3 ml-1" />
+                                </Button>
+                            </div>
+                        )}
                     </div>
                 </CardContent>
-                <CardFooter className="flex gap-4">
-                    <Button
-                        variant="outline"
-                        className="flex-1 h-12 text-lg border-slate-300"
-                        onClick={() => handleSubmit(true)}
-                        disabled={loading}
-                    >
-                        <Save className="w-4 h-4 mr-2" />
-                        حفظ كمسودة (لمراجعة لاحقاً)
-                    </Button>
-                    <Button
-                        className="flex-[2] h-12 text-lg bg-blue-600 hover:bg-blue-700"
-                        onClick={() => handleSubmit(false)}
-                        disabled={loading}
-                    >
-                        {loading ? 'جاري التنفيذ...' : 'اعتماد وترحيل القيد المحاسبي'}
-                    </Button>
-                </CardFooter>
+                {!isView ? (
+                    <CardFooter className="flex gap-4">
+                        <Button
+                            variant="outline"
+                            className="flex-1 h-12 text-lg border-slate-300"
+                            onClick={() => handleSubmit(true)}
+                            disabled={loading}
+                        >
+                            <Save className="w-4 h-4 mr-2" />
+                            حفظ كمسودة (لمراجعة لاحقاً)
+                        </Button>
+                        <Button
+                            className="flex-[2] h-12 text-lg bg-blue-600 hover:bg-blue-700"
+                            onClick={() => handleSubmit(false)}
+                            disabled={loading}
+                        >
+                            {loading ? 'جاري التنفيذ...' : 'اعتماد وترحيل القيد المحاسبي'}
+                        </Button>
+                    </CardFooter>
+                ) : (
+                    <CardFooter>
+                        <Button variant="outline" className="w-full h-12 text-lg" onClick={() => router.push('/accounting/payroll/history')}>
+                            عودة للتاريخ
+                        </Button>
+                    </CardFooter>
+                )}
             </Card>
         </div>
     );
