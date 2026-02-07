@@ -165,15 +165,22 @@ BEGIN
         ELSE RAISE EXCEPTION 'Invalid asset category';
     END CASE;
     
+    -- Get parent account ID from parent code
+    SELECT id INTO v_account_id
+    FROM accounts 
+    WHERE account_code = v_parent_code;
+    
+    IF v_account_id IS NULL THEN
+        RAISE EXCEPTION 'Parent account with code % not found', v_parent_code;
+    END IF;
+    
     -- Create account in chart of accounts using hierarchical function
-    -- Note: This assumes create_hierarchical_account_rpc exists
     v_account_id := create_hierarchical_account_rpc(
-        v_parent_code,
-        p_name_ar,
-        p_name_en,
-        'type_asset',
-        'LYD',
-        p_description
+        p_name_ar := p_name_ar,
+        p_name_en := p_name_en,
+        p_parent_id := v_account_id,
+        p_description := p_description,
+        p_currency := 'LYD'
     );
     
     -- Create fixed asset record
