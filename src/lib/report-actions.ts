@@ -176,15 +176,81 @@ export async function getIncomeStatement(startDate: string, endDate: string) {
     };
 }
 
-// --- المبيزانية العمومية (Balance Sheet) ---
+// --- قائمة المركز المالي (Balance Sheet) ---
 export async function getBalanceSheet() {
+    // 1. جلب جميع الحسابات النشطة مع أنواعها
     const { data: accounts, error } = await supabaseAdmin
         .from('accounts')
-        .select('*')
-        .or('account_code.like.1%,account_code.like.2%,account_code.like.3%')
+        .select(`
+            id,
+            account_code,
+            name_ar,
+            name_en,
+            current_balance,
+            level,
+            parent_id,
+            is_parent,
+            account_type:account_types!inner (
+                category,
+                normal_balance
+            )
+        `)
+        .eq('is_active', true)
         .order('account_code');
 
-    if (error) return { assets: [], liabilities: [], equity: [] };
+    if (error) {
+        console.error('Error fetching balance sheet:', error);
+        return { assets: [], liabilities: [], equity: [], totalAssets: 0, totalLiabilities: 0, totalEquity: 0 };
+    }
+
+    // 2. بناء الهيكل الشجري وتجميع الأرصدة
+    const accountMap = new Map<string, any>();
+
+    // تهيئة الحسابات في Map
+    accounts.forEach((acc: any) => {
+        acc.children = [];
+        // الرصيد المحسوب (يبدأ بالرصيد الحالي للحساب نفسه)
+        acc.computed_balance = Number(acc.current_balance) || 0;
+        // نستخدم القيمة المطلقة للعرض، لكن في التجميع نحتاج للإشارة الصحيحة أحياناً
+        // هنا سنفترض أن الأرصدة مخزنة بشكل صحيح (مدين موجب، دائن سالب أو العكس بانتظام)
+        // لكن للتبسيط في العرض: الأصول (Debit)، الخصوم (Credit)، الحقوق (Credit)
+        accountMap.set(acc.id, acc);
+    });
+
+    // بناء العلاقات (Parent-Child)
+    const roots: any[] = [];
+    accounts.forEach((acc: any) => {
+        if (acc.parent_id && accountMap.has(acc.parent_id)) {
+            const parent = accountMap.get(acc.parent_id);
+            parent.children.push(acc);
+        } else {
+            // حسابات رئيسية ليس لها أب (أو الأب غير موجود في القائمة)
+            roots.push(acc);
+        }
+    });
+
+    // دالة تجميعية (Recursive Roll-up)
+    const calculateRollup = (node: any) => {
+        let childrenSum = 0;
+        if (node.children && node.children.length > 0) {
+            for (const child of node.children) {
+                childrenSum += calculateRollup(child);
+            }
+        }
+        // رصيد الحساب المجمع = رصيده المباشر + مجموع أرصدة أبنائه
+        // ملاحظة: في الغالب الحسابات الأب رصيدها المباشر 0، لكن نجمع احتياطاً
+        node.total_balance = node.computed_balance + childrenSum;
+        return node.total_balance;
+    };
+
+    // حساب الأرصدة لجميع الجذور (وهذا سينزل لجميع المستويات)
+    roots.forEach(root => calculateRollup(root));
+
+    // 3. التصفية والتنسيق (Filtering & Formatting)
+    // نعرض فقط الحسابات حتى المستوى 3 (أو 4 حسب الحاجة)، ونخفي التفاصيل الدقيقة مثل العملاء الأفراد
+    // الافتراضي: عرض المستويات 1, 2, 3 فقط.
+    // العملاء عادة في المستوى 3 (حساب رئيسي) والعملاء الأفراد في 4.
+    const DISPLAY_LEVEL_LIMIT = 3;
 
     const assets: any[] = [];
     const liabilities: any[] = [];
@@ -194,22 +260,66 @@ export async function getBalanceSheet() {
     let totalLiabilities = 0;
     let totalEquity = 0;
 
-    for (const acc of accounts) {
-        if (acc.current_balance === 0 && !acc.is_parent) continue;
+    // دالة مساعدة لإضافة الحسابات للقوائم النهائية (Flattening the tree view based on level)
+    const processNode = (node: any) => {
+        // تحديد القائمة المستهدفة
+        let targetList: any[] | null = null;
+        let category = '';
 
-        const item = { ...acc, balance: Number(acc.current_balance) };
-
-        if (acc.account_code.startsWith('1')) {
-            assets.push(item);
-            if (!acc.is_parent) totalAssets += item.balance;
-        } else if (acc.account_code.startsWith('2')) {
-            liabilities.push(item);
-            if (!acc.is_parent) totalLiabilities += item.balance;
-        } else if (acc.account_code.startsWith('3')) {
-            equity.push(item);
-            if (!acc.is_parent) totalEquity += item.balance;
+        // تصنيف بناءً على الكود (أسرع وأضمن من الاعتماد على النوع المرتبط أحياناً)
+        if (node.account_code.startsWith('1')) {
+            targetList = assets;
+            category = 'assets';
+        } else if (node.account_code.startsWith('2')) {
+            targetList = liabilities;
+            category = 'liabilities';
+        } else if (node.account_code.startsWith('3')) {
+            targetList = equity;
+            category = 'equity';
         }
-    }
+
+        if (targetList) {
+            // شرط العرض:
+            // 1. المستوى أقل من أو يساوي الحد (مثلاً 1، 2، 3)
+            // 2. أو الحساب له رصيد وليس له أبناء (حساب فرعي مباشر في مستوى عالي)
+            // 3. نستثني الحسابات الصفرية إذا لم تكن حسابات رئيسية
+
+            const shouldShow = (node.level <= DISPLAY_LEVEL_LIMIT) || (node.is_parent === false && node.level < DISPLAY_LEVEL_LIMIT);
+            const hasBalance = Math.abs(node.total_balance) > 0.001;
+
+            if (shouldShow && (hasBalance || node.level === 1)) {
+                targetList.push({
+                    id: node.id,
+                    account_code: node.account_code,
+                    name_ar: node.name_ar,
+                    name_en: node.name_en,
+                    balance: Math.abs(node.total_balance), // عرض موجب دائماً
+                    level: node.level,
+                    is_parent: node.is_parent,
+                    has_children: node.children.length > 0
+                });
+            }
+
+            // إضافة للمجاميع الكلية (فقط للمستوى الأول لتجنب التكرار، أو نستخدم الجذر)
+            if (node.level === 1) {
+                if (category === 'assets') totalAssets += node.total_balance;
+                else if (category === 'liabilities') totalLiabilities += node.total_balance;
+                else if (category === 'equity') totalEquity += node.total_balance;
+            }
+        }
+
+        // الاستمرار للأبناء إذا كنا لم نصل للحد المسموح للعرض
+        // إذا وصلنا للمستوى 3، لن نعالج الأبناء (المستوى 4) للعرض، لكن أرصدتهم مجمعة بالفعل في الأب
+        if (node.level < DISPLAY_LEVEL_LIMIT && node.children) {
+            // ترتيب الأبناء بالكود
+            node.children.sort((a: any, b: any) => a.account_code.localeCompare(b.account_code));
+            node.children.forEach((child: any) => processNode(child));
+        }
+    };
+
+    // معالجة الجذور بترتيب الكود
+    roots.sort((a, b) => a.account_code.localeCompare(b.account_code));
+    roots.forEach(root => processNode(root));
 
     return {
         assets,

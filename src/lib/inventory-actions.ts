@@ -261,3 +261,207 @@ export async function deleteInventoryTransaction(transactionId: string) {
 
     return true;
 }
+// --- تسوية المخزون (Inventory Adjustments) ---
+
+export type AdjustmentType = 'in' | 'out' | 'damaged' | 'gift' | 'opening';
+
+export async function createInventoryAdjustment(data: {
+    itemId: string;
+    quantity: number; // الموجب زيادة، السالب نقص
+    type: AdjustmentType;
+    unitCost?: number; // مطلوب في حالة الزيادة (in/opening)
+    notes?: string;
+    date?: string;
+}) {
+    // 1. Get Item info
+    const { data: item } = await supabaseAdmin.from('inventory_items').select('*').eq('id', data.itemId).single();
+    if (!item) throw new Error('الصنف غير موجود');
+
+    const adjustmentDate = data.date || new Date().toISOString().split('T')[0];
+    const isIncrease = data.quantity > 0;
+    const absQty = Math.abs(data.quantity);
+
+    // التحقق من التكلفة
+    let unitCost = Number(data.unitCost);
+    if (isIncrease && (unitCost === undefined || unitCost < 0)) {
+        throw new Error('يجب تحديد تكلفة الوحدة عند إضافة رصيد.');
+    }
+
+    // في حالة النقص، التكلفة تحسب بناءً على FIFO (المتوسط المرجح حالياً للتبسيط، أو نجلب الطبقات)
+    // هنا سنستخدم متوسط التكلفة الحالي للصنف للخروج
+    if (!isIncrease) {
+        unitCost = Number(item.average_cost) || 0;
+    }
+
+    const totalAmount = absQty * unitCost;
+
+    // 2. Create Journal Entry
+    // Determine Accounts
+    const inventoryAccountId = item.inventory_account_id; // Debit (Increase) / Credit (Decrease)
+    if (!inventoryAccountId) throw new Error('حساب المخزون غير مربوط بهذا الصنف.');
+
+    let offsetAccountId: string | undefined;
+
+    // تحديد الحساب المقابل بناءً على نوع التسوية
+    // هذه الأكواد يجب أن تكون موجودة في دليل الحسابات
+    // 5201: تسويات جردية (مصروف)
+    // 5100: تكلفة بضاعة مباعة (COGS)
+    // 3103: بضاعة أول المدة (رأس المال/حقوق ملكية) أو حساب وسيط
+
+    const getAccount = async (code: string) => {
+        const { data } = await supabaseAdmin.from('accounts').select('id').eq('account_code', code).single();
+        return data?.id;
+    };
+
+    if (data.type === 'opening') {
+        offsetAccountId = await getAccount('3100'); // رأس المال (أو حساب تسوية أرصدة افتتاحية)
+    } else if (data.type === 'damaged') {
+        offsetAccountId = await getAccount('5201'); // مصروف تالف/عجز مخزون
+    } else {
+        offsetAccountId = await getAccount('5200'); // مصروفات أخرى/تسويات
+    }
+
+    if (!offsetAccountId) {
+        // Fallback: If accounts don't exist, try getting a generic expense account or throw
+        const { data: exp } = await supabaseAdmin.from('accounts').select('id').eq('account_code', '5200').single();
+        offsetAccountId = exp?.id;
+        // if (!offsetAccountId) throw new Error('تعذر تحديد حساب المصروف المقابل للتسوية. تأكد من وجود حساب 5200 أو 5201.');
+    }
+
+    const journalLines = [];
+
+    // تأكد من وجود حساب مقابل
+    if (!offsetAccountId) {
+        // إذا لم نجد الحساب، لن نقوم بإنشاء قيد محاسبي كامل ولكن سنحدث المخزون فقط (مع رسالة تحذير أو خطأ)
+        // الأفضل منع العملية
+        throw new Error('تعذر تحديد حساب المصروف المقابل للتسوية.');
+    }
+
+    if (isIncrease) {
+        // من ح/ المخزون (Debit)
+        journalLines.push({
+            account_id: inventoryAccountId,
+            debit: totalAmount,
+            credit: 0,
+            description: `تسوية زيادة مخزون: ${item.name_ar} - ${data.type}`
+        });
+        // إلى ح/ التسوية (Credit)
+        journalLines.push({
+            account_id: offsetAccountId,
+            debit: 0,
+            credit: totalAmount,
+            description: `تسوية زيادة مخزون: ${item.name_ar}`
+        });
+    } else {
+        // من ح/ التسوية (Debit)
+        journalLines.push({
+            account_id: offsetAccountId,
+            debit: totalAmount,
+            credit: 0,
+            description: `تسوية عجز/صرف مخزون: ${item.name_ar} - ${data.type}`
+        });
+        // إلى ح/ المخزون (Credit)
+        journalLines.push({
+            account_id: inventoryAccountId,
+            debit: 0,
+            credit: totalAmount,
+            description: `تسوية عجز/صرف مخزون: ${item.name_ar}`
+        });
+    }
+
+    // Call RPC to create Journal Entry
+    const { data: journalId, error: rpcError } = await supabaseAdmin.rpc('create_journal_entry_rpc', {
+        entry_date: adjustmentDate,
+        description: `تسوية مخزنية - ${data.type} - ${item.name_ar}`,
+        reference_type: 'inventory_adjustment',
+        reference_id: null, // Will be linked later if needed
+        lines: journalLines
+    });
+
+    if (rpcError) throw new Error(`فشل إنشاء القيد المحاسبي: ${rpcError.message}`);
+
+    // 3. Update Inventory (Layer + Transaction + Item Card)
+    // Reuse logic or replicate
+
+    // A. Insert Transaction Record
+    await supabaseAdmin.from('inventory_transactions').insert({
+        item_id: data.itemId,
+        transaction_type: data.type === 'damaged' ? 'adjustment_out' : (isIncrease ? 'adjustment_in' : 'adjustment_out'),
+        transaction_date: adjustmentDate,
+        quantity: absQty,
+        unit_cost: unitCost,
+        total_cost: totalAmount,
+        notes: data.notes || 'تسوية مخزنية',
+        reference_type: 'journal_entry',
+        reference_id: journalId
+    });
+
+    // B. Handle Layers (FIFO)
+    if (isIncrease) {
+        // Create new layer
+        await supabaseAdmin.from('inventory_layers').insert({
+            item_id: data.itemId,
+            purchase_date: adjustmentDate,
+            quantity: absQty,
+            remaining_quantity: absQty,
+            unit_cost: unitCost,
+            created_at: new Date().toISOString()
+        });
+    } else {
+        // Consume Layers (FIFO)
+        let qtyToConsume = absQty;
+        // Get available layers sorted by date
+        const layers = await getItemLayers(data.itemId);
+
+        // We need to iterate carefully
+        // Note: getItemLayers returns layers with remaining_quantity > 0
+        if (layers) {
+            for (const layer of layers) {
+                if (qtyToConsume <= 0) break;
+
+                const available = Number(layer.remaining_quantity);
+                if (available <= 0) continue;
+
+                const take = Math.min(available, qtyToConsume);
+
+                // Update layer
+                await supabaseAdmin.from('inventory_layers').update({
+                    remaining_quantity: available - take
+                }).eq('id', layer.id);
+
+                qtyToConsume -= take;
+            }
+        }
+
+        if (qtyToConsume > 0) {
+            console.warn(`Warning: Consumed more stock than available in layers for item ${data.itemId}. Negative stock possible.`);
+        }
+    }
+
+    // C. Update Item Master (Weighted Average & Qty)
+    const currentQty = Number(item.quantity_on_hand) || 0;
+    const currentAvg = Number(item.average_cost) || 0;
+
+    let newQty: number;
+    let newAvg: number = currentAvg;
+
+    if (isIncrease) {
+        newQty = currentQty + absQty;
+        // W.Avg Update
+        const oldVal = currentQty * currentAvg;
+        const newVal = absQty * unitCost;
+        if (newQty > 0) {
+            newAvg = (oldVal + newVal) / newQty;
+        }
+    } else {
+        newQty = currentQty - absQty;
+        // Average cost doesn't change on OUT
+    }
+
+    await supabaseAdmin.from('inventory_items').update({
+        quantity_on_hand: newQty,
+        average_cost: newAvg
+    }).eq('id', data.itemId);
+
+    return true;
+}

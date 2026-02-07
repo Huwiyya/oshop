@@ -27,6 +27,13 @@ import {
     CardTitle,
 } from '@/components/ui/card';
 import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from "@/components/ui/select";
+import {
     Plus,
     Search,
     Edit,
@@ -35,7 +42,8 @@ import {
     AlertTriangle,
     Loader2,
     DollarSign,
-    Boxes
+    Boxes,
+    ArrowRightLeft
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Product } from '@/lib/types';
@@ -45,14 +53,38 @@ import {
     updateProduct,
     deleteProduct,
 } from '@/lib/actions';
+import { createInventoryAdjustment, AdjustmentType } from '@/lib/inventory-actions'; // Import new action
 import { useToast } from '@/components/ui/use-toast';
 
 export default function InventoryPage() {
     const [products, setProducts] = useState<Product[]>([]);
     const [loading, setLoading] = useState(true);
     const [searchTerm, setSearchTerm] = useState('');
+
+    // Product Dialog State
     const [isDialogOpen, setIsDialogOpen] = useState(false);
     const [currentProduct, setCurrentProduct] = useState<Product | null>(null);
+
+    // Adjustment Dialog State
+    const [isAdjustmentOpen, setIsAdjustmentOpen] = useState(false);
+    const [adjustmentData, setAdjustmentData] = useState<{
+        productId: string;
+        productName: string;
+        currentQty: number;
+        type: AdjustmentType;
+        quantity: number;
+        cost?: number;
+        notes: string;
+    }>({
+        productId: '',
+        productName: '',
+        currentQty: 0,
+        type: 'in',
+        quantity: 0,
+        cost: 0,
+        notes: ''
+    });
+
     const { toast } = useToast();
 
     // Form State
@@ -99,6 +131,19 @@ export default function InventoryPage() {
         setIsDialogOpen(true);
     };
 
+    const openAdjustmentDialog = (product: Product) => {
+        setAdjustmentData({
+            productId: product.id,
+            productName: product.name,
+            currentQty: product.quantity,
+            type: 'in',
+            quantity: 1,
+            cost: product.costPriceUSD, // Default to current cost
+            notes: ''
+        });
+        setIsAdjustmentOpen(true);
+    };
+
     const handleSave = async () => {
         if (!formData.name) {
             toast({ title: "خطأ", description: "اسم المنتج مطلوب", variant: "destructive" });
@@ -107,7 +152,9 @@ export default function InventoryPage() {
 
         try {
             if (currentProduct) {
-                await updateProduct(currentProduct.id, formData);
+                // Prevent updating quantity directly
+                const { quantity, ...dataToUpdate } = formData;
+                await updateProduct(currentProduct.id, dataToUpdate);
                 toast({ title: "تم التحديث", description: "تم تحديث بيانات المنتج بنجاح." });
             } else {
                 await addProduct(formData as Omit<Product, 'id'>);
@@ -118,6 +165,42 @@ export default function InventoryPage() {
         } catch (error) {
             console.error(error);
             toast({ title: "خطأ", description: "حدث خطأ أثناء الحفظ.", variant: "destructive" });
+        }
+    };
+
+    const handleAdjustmentSave = async () => {
+        if (adjustmentData.quantity <= 0) {
+            toast({ title: "خطأ", description: "الكمية يجب أن تكون أكبر من صفر", variant: "destructive" });
+            return;
+        }
+
+        // Signed quantity logic
+        // If type is 'in' or 'opening' or 'gift' (inbound), qty is positive
+        // If type is 'out' or 'damaged' (outbound), logic usually expects positive qty representing the CHANGE amount, 
+        // but our action createInventoryAdjustment handles sign logic based on type IS_INCREASE check?
+        // Let's check action: it checks `data.quantity > 0` for Increase.
+        // So we must pass POSITIVE for Increase, NEGATIVE for Decrease.
+
+        let finalQty = adjustmentData.quantity;
+        if (['out', 'damaged'].includes(adjustmentData.type)) {
+            finalQty = -finalQty;
+        }
+
+        try {
+            await createInventoryAdjustment({
+                itemId: adjustmentData.productId,
+                quantity: finalQty,
+                type: adjustmentData.type,
+                unitCost: adjustmentData.cost,
+                notes: adjustmentData.notes
+            });
+
+            toast({ title: "تمت التسوية", description: "تم تسجيل حركة المخزون والقيد المحاسبي بنجاح." });
+            setIsAdjustmentOpen(false);
+            refreshData();
+        } catch (error: any) {
+            console.error(error);
+            toast({ title: "خطأ", description: error.message || "فشل إجراء التسوية", variant: "destructive" });
         }
     };
 
@@ -256,6 +339,9 @@ export default function InventoryPage() {
                                     </TableCell>
                                     <TableCell className="text-left">
                                         <div className="flex justify-end gap-2">
+                                            <Button variant="outline" size="sm" onClick={() => openAdjustmentDialog(product)} className="gap-1 h-8">
+                                                <ArrowRightLeft className="h-3 w-3" /> تسوية
+                                            </Button>
                                             <Button variant="ghost" size="icon" onClick={() => openDialog(product)}>
                                                 <Edit className="h-4 w-4" />
                                             </Button>
@@ -271,6 +357,7 @@ export default function InventoryPage() {
                 </Table>
             </div>
 
+            {/* Product Dialog */}
             <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
                 <DialogContent className="max-w-2xl" dir="rtl">
                     <DialogHeader>
@@ -299,7 +386,10 @@ export default function InventoryPage() {
                                 type="number"
                                 value={formData.quantity}
                                 onChange={(e) => setFormData({ ...formData, quantity: parseInt(e.target.value) || 0 })}
+                                disabled={!!currentProduct} // Disable editing quantity for existing products
+                                className={currentProduct ? "bg-slate-100" : ""}
                             />
+                            {currentProduct && <p className="text-xs text-muted-foreground">لتعديل الكمية يرجى استخدام زر "تسوية المخزون"</p>}
                         </div>
                         <div className="space-y-2">
                             <Label>حد التنبيه (Low Stock)</Label>
@@ -359,6 +449,79 @@ export default function InventoryPage() {
                     </DialogFooter>
                 </DialogContent>
             </Dialog>
+
+            {/* Adjustment Dialog */}
+            <Dialog open={isAdjustmentOpen} onOpenChange={setIsAdjustmentOpen}>
+                <DialogContent className="max-w-md" dir="rtl">
+                    <DialogHeader>
+                        <DialogTitle>تسوية مخزون: {adjustmentData.productName}</DialogTitle>
+                    </DialogHeader>
+                    <div className="space-y-4 py-4">
+                        <div className=" bg-slate-50 p-3 rounded text-sm text-slate-600 flex justify-between">
+                            <span>الرصيد الحالي:</span>
+                            <span className="font-bold">{adjustmentData.currentQty}</span>
+                        </div>
+
+                        <div className="space-y-2">
+                            <Label>نوع التسوية</Label>
+                            <Select
+                                value={adjustmentData.type}
+                                onValueChange={(val: AdjustmentType) => setAdjustmentData({ ...adjustmentData, type: val })}
+                            >
+                                <SelectTrigger>
+                                    <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="in">إضافة / مشتريات (In)</SelectItem>
+                                    <SelectItem value="out">صرف / مبيعات (Out)</SelectItem>
+                                    <SelectItem value="damaged">تالف / عجز (Damaged)</SelectItem>
+                                    <SelectItem value="gift">هدايا (Gift)</SelectItem>
+                                    <SelectItem value="opening">رصيد افتتاحي (Opening)</SelectItem>
+                                </SelectContent>
+                            </Select>
+                        </div>
+
+                        <div className="space-y-2">
+                            <Label>الكمية (الفرق)</Label>
+                            <Input
+                                type="number"
+                                min="1"
+                                value={adjustmentData.quantity}
+                                onChange={(e) => setAdjustmentData({ ...adjustmentData, quantity: parseInt(e.target.value) || 0 })}
+                            />
+                            <p className="text-xs text-muted-foreground">
+                                أدخل الكمية التي تريد إضافتها أو إنقاصها (رقم موجب دائماً).
+                            </p>
+                        </div>
+
+                        {['in', 'opening'].includes(adjustmentData.type) && (
+                            <div className="space-y-2">
+                                <Label>تلكفة الوحدة ($)</Label>
+                                <Input
+                                    type="number"
+                                    step="0.01"
+                                    value={adjustmentData.cost}
+                                    onChange={(e) => setAdjustmentData({ ...adjustmentData, cost: parseFloat(e.target.value) || 0 })}
+                                />
+                            </div>
+                        )}
+
+                        <div className="space-y-2">
+                            <Label>ملاحظات</Label>
+                            <Input
+                                value={adjustmentData.notes}
+                                onChange={(e) => setAdjustmentData({ ...adjustmentData, notes: e.target.value })}
+                                placeholder="سبب التسوية..."
+                            />
+                        </div>
+                    </div>
+                    <DialogFooter>
+                        <Button variant="outline" onClick={() => setIsAdjustmentOpen(false)}>إلغاء</Button>
+                        <Button onClick={handleAdjustmentSave}>تأكيد التسوية</Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
         </div>
     );
 }
+

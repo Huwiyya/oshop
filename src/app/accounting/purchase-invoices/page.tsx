@@ -6,7 +6,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Plus, Trash } from 'lucide-react';
+import { Plus, Trash, Pencil } from 'lucide-react';
 import { getPurchaseInvoices, deletePurchaseInvoice } from '@/lib/purchase-actions';
 import { formatCurrency } from '@/lib/utils';
 import { useToast } from '@/components/ui/use-toast';
@@ -107,6 +107,17 @@ function PurchaseInvoicesContent() {
                                         <TableCell>
                                             <div className="flex items-center gap-2">
                                                 <Button variant="ghost" size="sm">عرض</Button>
+                                                <Button
+                                                    variant="ghost"
+                                                    size="icon"
+                                                    className="h-8 w-8 text-blue-600 hover:text-blue-700 hover:bg-blue-50"
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        router.push(`/accounting/purchase-invoices/edit/${inv.id}`);
+                                                    }}
+                                                >
+                                                    <Pencil className="w-4 h-4" />
+                                                </Button>
                                                 <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-400 hover:text-red-600 hover:bg-red-50" onClick={(e) => handleDelete(e, inv.id)}>
                                                     <Trash className="w-4 h-4" />
                                                 </Button>

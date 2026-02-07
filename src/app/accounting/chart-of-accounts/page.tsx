@@ -50,7 +50,7 @@ import {
 } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { Badge } from '@/components/ui/badge';
-import { getAllAccounts, updateAccount, deleteAccount, toggleAccountStatus, createAccount } from '@/lib/accounting-actions';
+import { getAllAccounts, updateAccount, deleteAccount, toggleAccountStatus, createAccount, getAccountChildren } from '@/lib/accounting-actions';
 import { useToast } from '@/components/ui/use-toast';
 import {
     Select,
@@ -63,17 +63,19 @@ import {
 interface AccountTreeProps {
     account: any;
     expanded: { [key: string]: boolean };
-    onToggle: (id: string) => void;
+    onToggle: (account: any) => void;
     onEdit: (account: any) => void;
     onDelete: (account: any) => void;
     onToggleStatus: (id: string, currentStatus: boolean) => void;
     level?: number;
+    loadingChildren?: { [key: string]: boolean };
 }
 
-const AccountRow = ({ account, expanded, onToggle, onEdit, onDelete, onToggleStatus, level = 1 }: AccountTreeProps) => {
+const AccountRow = ({ account, expanded, onToggle, onEdit, onDelete, onToggleStatus, level = 1, loadingChildren = {} }: AccountTreeProps) => {
     const paddingRight = `${(level - 1) * 2}rem`;
     const isExpanded = expanded[account.id];
     const isInactive = account.is_active === false;
+    const isLoading = loadingChildren[account.id];
 
     // Determine type name strictly from account_type relation or fallback (handling mock data transition)
     const typeName = account.account_type?.name_ar || account.type || 'غير محدد';
@@ -87,24 +89,32 @@ const AccountRow = ({ account, expanded, onToggle, onEdit, onDelete, onToggleSta
         return 'bg-gray-100 text-gray-700 border-gray-200';
     };
 
+    // Show expand button if it has children OR it is a parent (implies lazy load might be needed)
+    const hasChildren = account.children && account.children.length > 0;
+    const canExpand = hasChildren || account.is_parent;
+
     return (
         <>
             <TableRow className={`hover:bg-slate-50 transition-colors group ${isInactive ? 'bg-slate-50 opacity-60 grayscale' : ''}`}>
                 <TableCell style={{ paddingRight }}>
                     <div className="flex items-center gap-2">
-                        {account.children && account.children.length > 0 && (
+                        {canExpand ? (
                             <button
-                                onClick={() => onToggle(account.id)}
+                                onClick={() => onToggle(account)}
                                 className="hover:bg-slate-200 rounded p-1 transition-colors"
+                                disabled={isLoading}
                             >
-                                {isExpanded ? (
+                                {isLoading ? (
+                                    <Loader2 className="h-4 w-4 animate-spin text-blue-600" />
+                                ) : isExpanded ? (
                                     <ChevronDown className="h-4 w-4" />
                                 ) : (
                                     <ChevronRight className="h-4 w-4" />
                                 )}
                             </button>
+                        ) : (
+                            <div className="w-6" />
                         )}
-                        {(!account.children || account.children.length === 0) && <div className="w-6" />}
                         <span className={`font-${level === 1 ? 'bold' : level === 2 ? 'semibold' : 'medium'} ${isInactive ? 'line-through decoration-slate-400' : ''}`}>
                             {account.name_ar}
                         </span>
@@ -159,6 +169,7 @@ const AccountRow = ({ account, expanded, onToggle, onEdit, onDelete, onToggleSta
                     onDelete={onDelete}
                     onToggleStatus={onToggleStatus}
                     level={level + 1}
+                    loadingChildren={loadingChildren}
                 />
             ))}
         </>
@@ -169,10 +180,11 @@ export default function ChartOfAccountsPage() {
     const router = useRouter();
     const { toast } = useToast();
     const [accounts, setAccounts] = useState<any[]>([]);
-    const [flatAccounts, setFlatAccounts] = useState<any[]>([]);
+    const [flatAccounts, setFlatAccounts] = useState<any[]>([]); // To calculate logic, minimal set initially
     const [loading, setLoading] = useState(true);
     const [searchQuery, setSearchQuery] = useState('');
     const [expanded, setExpanded] = useState<{ [key: string]: boolean }>({});
+    const [loadingChildren, setLoadingChildren] = useState<{ [key: string]: boolean }>({});
     const [showInactive, setShowInactive] = useState(false);
 
     // Edit State
@@ -192,7 +204,8 @@ export default function ChartOfAccountsPage() {
     const fetchAccounts = async () => {
         setLoading(true);
         try {
-            const data = await getAllAccounts();
+            // Lazy load: Fetch only up to level 3 initially
+            const data = await getAllAccounts(3);
             if (data) {
                 setFlatAccounts(data);
 
@@ -209,6 +222,10 @@ export default function ChartOfAccountsPage() {
                         accountMap[acc.parent_id].children.push(accountMap[acc.id]);
                     } else if (!acc.parent_id) { // Root nodes
                         tree.push(accountMap[acc.id]);
+                    } else {
+                        // Orphan nodes or parents not in initial fetch (shouldn't happen with level logic unless broken data)
+                        // Treat as root for safety if level 1
+                        if (acc.level === 1) tree.push(accountMap[acc.id]);
                     }
                 });
 
@@ -231,11 +248,45 @@ export default function ChartOfAccountsPage() {
         fetchAccounts();
     }, []);
 
-    const toggleExpand = (id: string) => {
-        setExpanded(prev => ({ ...prev, [id]: !prev[id] }));
+    const toggleExpand = async (account: any) => {
+        const isExpanding = !expanded[account.id];
+        setExpanded(prev => ({ ...prev, [account.id]: isExpanding }));
+
+        // Lazy Load Logic
+        if (isExpanding && account.is_parent && (!account.children || account.children.length === 0)) {
+            setLoadingChildren(prev => ({ ...prev, [account.id]: true }));
+            try {
+                const children = await getAccountChildren(account.id);
+                if (children && children.length > 0) {
+                    // Update tree with new children
+                    const updateTreeRecursively = (nodes: any[]): any[] => {
+                        return nodes.map(node => {
+                            if (node.id === account.id) {
+                                return { ...node, children: children };
+                            }
+                            if (node.children) {
+                                return { ...node, children: updateTreeRecursively(node.children) };
+                            }
+                            return node;
+                        });
+                    };
+                    setAccounts(prev => updateTreeRecursively(prev));
+
+                    // Also update flatAccounts for search/dropdowns if needed, though incomplete list
+                    setFlatAccounts(prev => [...prev, ...children]);
+                } else {
+                    toast({ description: 'لا يوجد حسابات فرعية', duration: 2000 });
+                }
+            } catch (err) {
+                toast({ title: 'خطأ', description: 'فشل تحميل الحسابات الفرعية', variant: 'destructive' });
+            } finally {
+                setLoadingChildren(prev => ({ ...prev, [account.id]: false }));
+            }
+        }
     };
 
     const expandAll = () => {
+        // Only expands what is currently loaded
         const allExpanded: { [key: string]: boolean } = {};
         const expandRecursive = (nodes: any[]) => {
             nodes.forEach(node => {

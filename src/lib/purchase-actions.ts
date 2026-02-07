@@ -264,3 +264,185 @@ export async function deletePurchaseInvoice(id: string) {
 
     return true;
 }
+
+/**
+ * تعديل فاتورة شراء
+ * ⚠️ هذه عملية معقدة محاسبياً - نستخدم استراتيجية الحذف وإعادة الإنشاء
+ * 
+ * @param invoiceId - معرف الفاتورة
+ * @param data - البيانات الجديدة
+ */
+export async function updatePurchaseInvoice(invoiceId: string, data: CreateInvoiceData) {
+    // 1. الحصول على الفاتورة القديمة
+    const { data: oldInvoice, error: fetchError } = await supabaseAdmin
+        .from('purchase_invoices')
+        .select('*')
+        .eq('id', invoiceId)
+        .single();
+
+    if (fetchError || !oldInvoice) {
+        throw new Error('الفاتورة غير موجودة');
+    }
+
+    const oldInvoiceNumber = oldInvoice.invoice_number;
+
+    // 2. حذف البيانات القديمة (القيود، المخزون، الأسطر)
+    // حذف القيود المحاسبية المرتبطة
+    await supabaseAdmin
+        .from('journal_entries')
+        .delete()
+        .eq('reference_id', oldInvoiceNumber);
+
+    // حذف معاملات المخزون وتحديث الكميات
+    const { data: transactions } = await supabaseAdmin
+        .from('inventory_transactions')
+        .select('id')
+        .eq('reference_id', oldInvoiceNumber)
+        .eq('reference_type', 'purchase_invoice');
+
+    let txToDelete = transactions || [];
+
+    // Fallback للبيانات القديمة
+    if (txToDelete.length === 0) {
+        const { data: oldTx } = await supabaseAdmin
+            .from('inventory_transactions')
+            .select('id')
+            .ilike('notes', `%${oldInvoiceNumber}%`);
+        if (oldTx) txToDelete = [...txToDelete, ...oldTx];
+    }
+
+    if (txToDelete && txToDelete.length > 0) {
+        const uniqueIds = Array.from(new Set(txToDelete.map(t => t.id)));
+        for (const id of uniqueIds) {
+            await deleteInventoryTransaction(id);
+        }
+    }
+
+    // حذف أسطر الفاتورة القديمة
+    await supabaseAdmin
+        .from('purchase_invoice_lines')
+        .delete()
+        .eq('invoice_id', invoiceId);
+
+    // 3. تحديث البيانات الأساسية للفاتورة (نحتفظ برقم الفاتورة)
+    const subtotal = data.items.reduce((sum, item) => sum + item.total, 0);
+    const totalAmount = subtotal;
+    const remainingAmount = totalAmount - data.paidAmount;
+    const paymentStatus = data.paidAmount >= totalAmount ? 'paid' : (data.paidAmount > 0 ? 'partial' : 'unpaid');
+
+    const { error: updateError } = await supabaseAdmin
+        .from('purchase_invoices')
+        .update({
+            invoice_date: data.invoiceDate,
+            supplier_account_id: data.supplierId,
+            currency: data.currency,
+            exchange_rate: data.exchangeRate,
+            subtotal: subtotal,
+            total_amount: totalAmount,
+            paid_amount: data.paidAmount,
+            remaining_amount: remainingAmount,
+            payment_status: paymentStatus,
+            notes: data.notes,
+            updated_at: new Date().toISOString()
+        })
+        .eq('id', invoiceId);
+
+    if (updateError) throw new Error(updateError.message);
+
+    // 4. إضافة الأسطر الجديدة والمخزون
+    for (const item of data.items) {
+        // إضافة سطر الفاتورة
+        await supabaseAdmin.from('purchase_invoice_lines').insert({
+            invoice_id: invoiceId,
+            item_id: item.itemId,
+            description: item.description,
+            quantity: item.quantity,
+            unit_price: item.unitPrice,
+            total: item.total
+        });
+
+        // إضافة المخزون
+        if (item.cardNumbers && item.cardNumbers.length > 0) {
+            for (const cardNum of item.cardNumbers) {
+                await addInventoryStock({
+                    itemId: item.itemId,
+                    quantity: 1,
+                    unitCost: item.unitPrice,
+                    purchaseDate: data.invoiceDate,
+                    cardNumber: cardNum,
+                    notes: `فاتورة شراء #${oldInvoiceNumber} (معدلة)`,
+                    referenceId: oldInvoiceNumber,
+                    referenceType: 'purchase_invoice'
+                });
+            }
+        } else {
+            await addInventoryStock({
+                itemId: item.itemId,
+                quantity: item.quantity,
+                unitCost: item.unitPrice,
+                purchaseDate: data.invoiceDate,
+                notes: `فاتورة شراء #${oldInvoiceNumber} (معدلة)`,
+                referenceId: oldInvoiceNumber,
+                referenceType: 'purchase_invoice'
+            });
+        }
+    }
+
+    // 5. إنشاء القيد المحاسبي الجديد
+    const { data: inventoryAcc } = await supabaseAdmin
+        .from('accounts')
+        .select('id')
+        .eq('account_code', '1130')
+        .single();
+
+    const journalLines: JournalEntryLine[] = [];
+
+    if (inventoryAcc) {
+        journalLines.push({
+            accountId: inventoryAcc.id,
+            description: `استحقاق فاتورة شراء #${oldInvoiceNumber} (معدلة) - ${data.items.length} أصناف`,
+            debit: totalAmount,
+            credit: 0
+        });
+    }
+
+    journalLines.push({
+        accountId: data.supplierId,
+        description: `استحقاق فاتورة شراء #${oldInvoiceNumber} (معدلة)`,
+        debit: 0,
+        credit: totalAmount
+    });
+
+    if (journalLines.length === 2) {
+        await createJournalEntry({
+            date: data.invoiceDate,
+            description: `فاتورة شراء #${oldInvoiceNumber} (معدلة)`,
+            referenceType: 'purchase_invoice',
+            referenceId: oldInvoiceNumber,
+            lines: journalLines,
+            currency: data.currency
+        });
+    }
+
+    // 6. معالجة الدفع (إذا كان هناك مبلغ مدفوع)
+    if (data.paidAmount > 0 && data.paymentAccountId) {
+        await createPayment({
+            date: data.invoiceDate,
+            paymentAccountId: data.paymentAccountId,
+            paymentAccountName: '',
+            payee: `مورد فاتورة ${oldInvoiceNumber}`,
+            description: `سداد فاتورة شراء #${oldInvoiceNumber} (معدلة)`,
+            amount: data.paidAmount,
+            currency: data.currency,
+            lineItems: [
+                {
+                    accountId: data.supplierId,
+                    amount: data.paidAmount,
+                    description: `سداد للمورد - فاتورة شراء #${oldInvoiceNumber} (معدلة)`
+                }
+            ]
+        });
+    }
+
+    return { success: true, invoiceId };
+}

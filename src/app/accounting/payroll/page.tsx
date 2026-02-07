@@ -1,6 +1,5 @@
 
 'use client';
-
 import { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -10,9 +9,93 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { getEmployees, getExpenseAccounts, getAssetAccounts, createPayslip } from '@/lib/payroll-actions';
 import { useToast } from '@/components/ui/use-toast';
-import { formatCurrency } from '@/lib/utils';
-import { ArrowLeft, Wallet, Calculator, FileText, Plus } from 'lucide-react';
+import { formatCurrency, cn } from '@/lib/utils';
+import { ArrowLeft, Wallet, Calculator, FileText, Plus, Check, ChevronsUpDown, Save } from 'lucide-react';
 import { useRouter } from 'next/navigation';
+import {
+    Command,
+    CommandEmpty,
+    CommandGroup,
+    CommandInput,
+    CommandItem,
+    CommandList,
+} from "@/components/ui/command"
+import {
+    Popover,
+    PopoverContent,
+    PopoverTrigger,
+} from "@/components/ui/popover"
+
+// --- Reusable Combobox Component ---
+interface ComboboxProps {
+    items: { id: string; name_ar: string; account_code?: string }[];
+    value: string;
+    onChange: (value: string) => void;
+    placeholder?: string;
+    searchPlaceholder?: string;
+    disabled?: boolean;
+}
+
+function AccountCombobox({ items, value, onChange, placeholder = "اختر حساب...", searchPlaceholder = "بحث...", disabled = false }: ComboboxProps) {
+    const [open, setOpen] = useState(false);
+
+    const selectedItem = items.find(item => item.id === value);
+
+    return (
+        <Popover open={open} onOpenChange={setOpen}>
+            <PopoverTrigger asChild>
+                <Button
+                    variant="outline"
+                    role="combobox"
+                    aria-expanded={open}
+                    className="w-full justify-between font-normal"
+                    disabled={disabled}
+                >
+                    {selectedItem ? (
+                        <span className="truncate flex items-center gap-2">
+                            {selectedItem.account_code && <span className="text-slate-400 font-mono text-xs">{selectedItem.account_code}</span>}
+                            {selectedItem.name_ar}
+                        </span>
+                    ) : (
+                        <span className="text-slate-500">{placeholder}</span>
+                    )}
+                    <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-[300px] p-0" align="start">
+                <Command>
+                    <CommandInput placeholder={searchPlaceholder} />
+                    <CommandList>
+                        <CommandEmpty>لم يتم العثور على نتائج.</CommandEmpty>
+                        <CommandGroup>
+                            {items.map((item) => (
+                                <CommandItem
+                                    key={item.id}
+                                    value={item.name_ar}
+                                    onSelect={() => {
+                                        onChange(item.id);
+                                        setOpen(false);
+                                    }}
+                                >
+                                    <Check
+                                        className={cn(
+                                            "mr-2 h-4 w-4",
+                                            value === item.id ? "opacity-100" : "opacity-0"
+                                        )}
+                                    />
+                                    <div className="flex flex-col">
+                                        <span className="font-medium">{item.name_ar}</span>
+                                        {item.account_code && <span className="text-xs text-slate-400">{item.account_code}</span>}
+                                    </div>
+                                </CommandItem>
+                            ))}
+                        </CommandGroup>
+                    </CommandList>
+                </Command>
+            </PopoverContent>
+        </Popover>
+    );
+}
 
 export default function PayrollPage() {
     const router = useRouter();
@@ -37,7 +120,7 @@ export default function PayrollPage() {
         overtimeAccountId: '',
 
         absence: 0,
-        absenceAccountId: '', // Optional deduction account
+        absenceAccountId: '',
 
         advances: 0,
         advancesAccountId: '',
@@ -57,23 +140,37 @@ export default function PayrollPage() {
             setEmployees(emps || []);
             setExpenseAccounts(exps || []);
             setAssetAccounts(assets || []);
-
-            // Set defaults if possible logic...
         });
     }, []);
 
     // Set default salary account when loading
     useEffect(() => {
         if (expenseAccounts.length > 0 && !formData.basicSalaryAccountId) {
-            const salariesAcc = expenseAccounts.find(a => a.name_ar.includes('رواتب') || a.account_code === '5100'); // Example
+            const salariesAcc = expenseAccounts.find(a => a.name_ar.includes('رواتب') || a.account_code === '5100');
             if (salariesAcc) setFormData(prev => ({ ...prev, basicSalaryAccountId: salariesAcc.id }));
         }
     }, [expenseAccounts]);
 
-    const handleSubmit = async () => {
+    const handleSubmit = async (isDraft: boolean) => {
         if (!formData.employeeId) {
             toast({ title: 'خطأ', description: 'يجب اختيار موظف', variant: 'destructive' });
             return;
+        }
+
+        // Validation for Post
+        if (!isDraft) {
+            if (!formData.basicSalaryAccountId) {
+                toast({ title: 'خطأ', description: 'يجب اختيار حساب الراتب الأساسي', variant: 'destructive' });
+                return;
+            }
+            if (formData.absence > 0 && (!formData.absenceAccountId || formData.absenceAccountId === 'none')) {
+                toast({ title: 'خطأ', description: 'يجب اختيار حساب لخصم الغياب لضمان توازن القيد', variant: 'destructive' });
+                return;
+            }
+            if (formData.advances > 0 && !formData.advancesAccountId) {
+                toast({ title: 'خطأ', description: 'يجب اختيار حساب السلف', variant: 'destructive' });
+                return;
+            }
         }
 
         setLoading(true);
@@ -97,16 +194,22 @@ export default function PayrollPage() {
 
                 otherDeductions: formData.otherDeductions,
                 notes: formData.notes
+            }, isDraft);
+
+            toast({
+                title: isDraft ? 'تم الحفظ' : 'تم الاعتماد',
+                description: isDraft ? 'تم حفظ مسودة القسيمة بنجاح' : 'تم اعتماد القسيمة وترحيل القيد بنجاح'
             });
-            toast({ title: 'تم الحفظ', description: 'تم إنشاء قسيمة الراتب والقيد بنجاح' });
+
             // Reset crucial fields
             setFormData(prev => ({
                 ...prev,
                 overtime: 0, absence: 0, advances: 0, otherDeductions: 0,
-                // keep employee? or reset?
             }));
+
         } catch (error: any) {
-            toast({ title: 'خطأ', description: error.message, variant: 'destructive' });
+            console.error(error);
+            toast({ title: 'خطأ', description: error.message || 'حدث خطأ ما', variant: 'destructive' });
         } finally {
             setLoading(false);
         }
@@ -136,20 +239,13 @@ export default function PayrollPage() {
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                         <div className="space-y-2">
                             <Label>الموظف</Label>
-                            <Select
+                            <AccountCombobox
+                                items={employees}
                                 value={formData.employeeId}
-                                onValueChange={(v) => {
-                                    setFormData({ ...formData, employeeId: v });
-                                    // Could fetch default salary from description/db
-                                }}
-                            >
-                                <SelectTrigger>
-                                    <SelectValue placeholder="اختر الموظف" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                    {employees.map(e => <SelectItem key={e.id} value={e.id}>{e.name_ar}</SelectItem>)}
-                                </SelectContent>
-                            </Select>
+                                onChange={(v) => setFormData({ ...formData, employeeId: v })}
+                                placeholder="اختر الموظف..."
+                                searchPlaceholder="بحث عن موظف..."
+                            />
                         </div>
                         <div className="space-y-2">
                             <Label>عن شهر (الفترة)</Label>
@@ -184,17 +280,14 @@ export default function PayrollPage() {
                                         value={formData.basicSalary}
                                         onChange={e => setFormData({ ...formData, basicSalary: Number(e.target.value) })}
                                     />
-                                    <Select
-                                        value={formData.basicSalaryAccountId}
-                                        onValueChange={v => setFormData({ ...formData, basicSalaryAccountId: v })}
-                                    >
-                                        <SelectTrigger className="w-[180px]">
-                                            <SelectValue placeholder="حساب المصروف" />
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                            {expenseAccounts.map(a => <SelectItem key={a.id} value={a.id}>{a.name_ar}</SelectItem>)}
-                                        </SelectContent>
-                                    </Select>
+                                    <div className="w-[200px]">
+                                        <AccountCombobox
+                                            items={expenseAccounts}
+                                            value={formData.basicSalaryAccountId}
+                                            onChange={v => setFormData({ ...formData, basicSalaryAccountId: v })}
+                                            placeholder="حساب المصروف"
+                                        />
+                                    </div>
                                 </div>
                             </div>
 
@@ -206,17 +299,14 @@ export default function PayrollPage() {
                                         value={formData.overtime}
                                         onChange={e => setFormData({ ...formData, overtime: Number(e.target.value) })}
                                     />
-                                    <Select
-                                        value={formData.overtimeAccountId}
-                                        onValueChange={v => setFormData({ ...formData, overtimeAccountId: v })}
-                                    >
-                                        <SelectTrigger className="w-[180px]">
-                                            <SelectValue placeholder="حساب المصروف" />
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                            {expenseAccounts.map(a => <SelectItem key={a.id} value={a.id}>{a.name_ar}</SelectItem>)}
-                                        </SelectContent>
-                                    </Select>
+                                    <div className="w-[200px]">
+                                        <AccountCombobox
+                                            items={expenseAccounts}
+                                            value={formData.overtimeAccountId}
+                                            onChange={v => setFormData({ ...formData, overtimeAccountId: v })}
+                                            placeholder="حساب المصروف"
+                                        />
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -235,18 +325,14 @@ export default function PayrollPage() {
                                         value={formData.absence}
                                         onChange={e => setFormData({ ...formData, absence: Number(e.target.value) })}
                                     />
-                                    <Select
-                                        value={formData.absenceAccountId}
-                                        onValueChange={v => setFormData({ ...formData, absenceAccountId: v })}
-                                    >
-                                        <SelectTrigger className="w-[180px]">
-                                            <SelectValue placeholder="حساب (اختياري)" />
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                            <SelectItem value="none">بدون (خصم مباشر)</SelectItem>
-                                            {expenseAccounts.map(a => <SelectItem key={a.id} value={a.id}>{a.name_ar}</SelectItem>)}
-                                        </SelectContent>
-                                    </Select>
+                                    <div className="w-[200px]">
+                                        <AccountCombobox
+                                            items={expenseAccounts} // Usually same as salary expense to reverse it
+                                            value={formData.absenceAccountId}
+                                            onChange={v => setFormData({ ...formData, absenceAccountId: v })}
+                                            placeholder="حساب الخصم"
+                                        />
+                                    </div>
                                 </div>
                             </div>
 
@@ -258,22 +344,19 @@ export default function PayrollPage() {
                                         value={formData.advances}
                                         onChange={e => setFormData({ ...formData, advances: Number(e.target.value) })}
                                     />
-                                    <Select
-                                        value={formData.advancesAccountId}
-                                        onValueChange={v => setFormData({ ...formData, advancesAccountId: v })}
-                                    >
-                                        <SelectTrigger className="w-[180px]">
-                                            <SelectValue placeholder="حساب السلف" />
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                            {assetAccounts.map(a => <SelectItem key={a.id} value={a.id}>{a.name_ar}</SelectItem>)}
-                                        </SelectContent>
-                                    </Select>
+                                    <div className="w-[200px]">
+                                        <AccountCombobox
+                                            items={assetAccounts}
+                                            value={formData.advancesAccountId}
+                                            onChange={v => setFormData({ ...formData, advancesAccountId: v })}
+                                            placeholder="حساب السلف"
+                                        />
+                                    </div>
                                 </div>
                             </div>
 
                             <div className="space-y-2">
-                                <Label className="text-xs text-slate-500">أخرى</Label>
+                                <Label className="text-xs text-slate-500">أخرى (يجب اختيار حساب غياب لها حالياً)</Label>
                                 <Input
                                     type="number" placeholder="0.00"
                                     value={formData.otherDeductions}
@@ -295,9 +378,22 @@ export default function PayrollPage() {
                         </p>
                     </div>
                 </CardContent>
-                <CardFooter>
-                    <Button className="w-full h-12 text-lg" onClick={handleSubmit} disabled={loading}>
-                        {loading ? 'جاري التنفيذ...' : 'اعتماد وترحيل القسيمة'}
+                <CardFooter className="flex gap-4">
+                    <Button
+                        variant="outline"
+                        className="flex-1 h-12 text-lg border-slate-300"
+                        onClick={() => handleSubmit(true)}
+                        disabled={loading}
+                    >
+                        <Save className="w-4 h-4 mr-2" />
+                        حفظ مسودة
+                    </Button>
+                    <Button
+                        className="flex-[2] h-12 text-lg"
+                        onClick={() => handleSubmit(false)}
+                        disabled={loading}
+                    >
+                        {loading ? 'جاري التنفيذ...' : 'اعتماد وترحيل القيد'}
                     </Button>
                 </CardFooter>
             </Card>

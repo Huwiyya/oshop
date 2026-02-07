@@ -109,110 +109,168 @@ export async function createEmployee(data: { name_ar: string; phone?: string; sa
 
 // --- دوال الرواتب ---
 
-export async function createPayslip(data: CreatePayslipData) {
+export async function createPayslip(data: CreatePayslipData, isDraft: boolean = false) {
     // 1. Calculate Net Salary
-    // Net = (Basic + Overtime) - (Absence + Advances + Others)
     const totalEarnings = data.basicSalary + data.overtime;
+    // Note: Deductions should include 'otherDeductions'
     const totalDeductions = data.absence + data.advances + data.otherDeductions;
     const netSalary = totalEarnings - totalDeductions;
 
-    if (netSalary < 0) throw new Error('Net salary cannot be negative');
+    if (netSalary < 0) throw new Error('لا يمكن أن يكون صافي الراتب بالسالب');
 
-    // 2. Prepare Journal Entry Lines
-    const lines: JournalEntryLine[] = [];
+    // 2. Generate Slip Number (Simple timestamp based or text)
+    // In production, use a sequence or count
+    const slipNumber = `SLIP-${data.period.replace('-', '')}-${Date.now().toString().slice(-4)}`;
 
-    // Debit: Basic Salary Expense
-    if (data.basicSalary > 0) {
+    // Get Employee Name for denormalization
+    const { data: empAccount } = await supabaseAdmin.from('accounts').select('name_ar').eq('id', data.employeeId).single();
+    const empName = empAccount?.name_ar || 'Unknown';
+
+    try {
+        // 3. Insert into payroll_slips
+        const slipData = {
+            slip_number: slipNumber,
+            employee_id: data.employeeId,
+            employee_name: empName,
+            period_month: parseInt(data.period.split('-')[1]),
+            period_year: parseInt(data.period.split('-')[0]),
+            basic_salary: data.basicSalary,
+            basic_salary_account_id: data.basicSalaryAccountId,
+            overtime: data.overtime,
+            overtime_account_id: data.overtimeAccountId,
+            absences: data.absence,
+            advances: data.advances,
+            advances_account_id: data.advancesAccountId,
+            deductions: data.otherDeductions, // Storing other deductions here
+            net_salary: netSalary,
+            employee_payable_account_id: data.employeeId,
+            payment_status: 'unpaid',
+            // Allowances not used in form yet, set 0
+            allowances: 0,
+            allowances_account_id: null,
+            journal_entry_id: null // set later if posted
+        };
+
+        const { data: insertedSlip, error: slipError } = await supabaseAdmin
+            .from('payroll_slips')
+            .insert(slipData)
+            .select()
+            .single();
+
+        if (slipError) throw new Error('فشل حفظ قسيمة الراتب: ' + slipError.message);
+
+        // 4. If Draft, return success
+        if (isDraft) {
+            return { success: true, id: insertedSlip.id, message: 'تم حفظ المسودة بنجاح' };
+        }
+
+        // 5. If NOT Draft, Create Journal Entry
+        // Prepare Journal Entry Lines
+        const lines: JournalEntryLine[] = [];
+
+        // Debit: Basic Salary Expense
+        if (data.basicSalary > 0) {
+            lines.push({
+                accountId: data.basicSalaryAccountId,
+                description: `راتب أساسي - ${data.period} - ${empName}`,
+                debit: data.basicSalary,
+                credit: 0
+            });
+        }
+
+        // Debit: Overtime Expense
+        if (data.overtime > 0) {
+            lines.push({
+                accountId: data.overtimeAccountId,
+                description: `إضافي - ${data.period} - ${empName}`,
+                debit: data.overtime,
+                credit: 0
+            });
+        }
+
+        // Credit: Absence (Contra Expense or Income) -> handled as credit specific account if provided
+        if (data.absence > 0 && data.absenceAccountId && data.absenceAccountId !== 'none') {
+            lines.push({
+                accountId: data.absenceAccountId,
+                description: `خصم غياب - ${data.period}`,
+                debit: 0,
+                credit: data.absence
+            });
+        } else if (data.absence > 0) {
+            // If no specific account, we might need a default 'Miscellaneous Income' or reduce Expense?
+            // Since we debited FULL Amount, but employee gets LESS. We need to credit SOMETHING to balance.
+            // If user selected "None", maybe we should have REDUCED the Debit? 
+            // But for now, let's assume valid accounting requires an account.
+            // We will skip this check here as strict validation should be on UI or we error out if unbalanced?
+            // `createJournalEntry` checks balance. So if we don't add a credit line, it will fail.
+            // We'll throw error if no account provided for non-zero absence to force user selection.
+            throw new Error('يجب تحديد حساب لخصم الغياب لضمان توازن القيد');
+        }
+
+        // Credit: Advances
+        if (data.advances > 0) {
+            if (!data.advancesAccountId) throw new Error('يجب تحديد حساب السلف');
+            lines.push({
+                accountId: data.advancesAccountId,
+                description: `خصم سلفة - ${data.period}`,
+                debit: 0,
+                credit: data.advances
+            });
+        }
+
+        // Credit: Other Deductions -> Need account!
+        // The form doesn't have "Other Deductions Account". This is a flaw in current form.
+        // We will assume for now it goes to "Other Revenues" or similar if we want to support it, 
+        // OR we just throw error saying "not implemented fully".
+        // BUT, usually "Other Deductions" might be penalties.
+        // Let's assume for this specific execution, we map it to 'Absence Account' if available or require update.
+        // To be safe and minimal change: We'll add it to Net Salary (Payable) if negative? No.
+        // If otherDeductions > 0, we need a Credit line.
+        // Let's assume for now we don't support "Other Deductions" accounting-wise without an account selector.
+        // Override: We will instruct user in UI to use "Absence" for all penalties or add a selector.
+        // For now, if otherDeductions > 0, we require absenceAccountId to serve double duty or specific logic.
+        // Let's put it in Absence Account if exists.
+        if (data.otherDeductions > 0) {
+            if (!data.absenceAccountId || data.absenceAccountId === 'none') throw new Error('يجب تحديد حساب الخصومات (حقل الغياب/الجزاءات) لتغطية الاستقطاعات الأخرى');
+            lines.push({
+                accountId: data.absenceAccountId,
+                description: `استقطاعات أخرى - ${data.period}`,
+                debit: 0,
+                credit: data.otherDeductions
+            });
+        }
+
+        // Credit: Net Salary (Payable)
         lines.push({
-            accountId: data.basicSalaryAccountId,
-            description: `راتب أساسي - ${data.period}`,
-            debit: data.basicSalary,
-            credit: 0
-        });
-    }
-
-    // Debit: Overtime Expense
-    if (data.overtime > 0) {
-        lines.push({
-            accountId: data.overtimeAccountId,
-            description: `إضافي - ${data.period}`,
-            debit: data.overtime,
-            credit: 0
-        });
-    }
-
-    // Credit: Absence (Deduction)
-    // If we consider Absence as "Unpaid", we simply don't accrue it?
-    // User requested "Absence (-) Credit". This usually means it COUNTERS the expense or Payable?
-    // Let's assume standard accounting: We booked Full Basic Salary as Debit.
-    // So Absence should be CREDIT to "Salaries Expense" (reversal) OR Credit to "Other Income".
-    // OR: We only book (Basic - Absence) as Debit?
-    // Implementing User Request: "Absence (-) Credit".
-    // We will allow user to select an account for Absence deduction (optional).
-    // If selected, we Credit it. If not, we assume the Basic Salary Debit was already Net of absence?
-    // Actually, usually Basic Salary is fixed. So:
-    // Dr. Salary Expense (Full)
-    // Cr. Absence Deduction (Contra Expense or Income)
-    // Cr. Payable (Net)
-    if (data.absence > 0 && data.absenceAccountId) {
-        lines.push({
-            accountId: data.absenceAccountId,
-            description: `خصم غياب - ${data.period}`,
+            accountId: data.employeeId,
+            description: `صافي راتب مستحق - ${data.period} - ${empName}`,
             debit: 0,
-            credit: data.absence
+            credit: netSalary
         });
-    }
 
-    // Credit: Advances (Asset reduction)
-    if (data.advances > 0) {
-        lines.push({
-            accountId: data.advancesAccountId,
-            description: `خصم سلفة - ${data.period}`,
-            debit: 0,
-            credit: data.advances
+        // 5. If NOT Draft, Create Journal Entry
+        // Use RPC for atomic creation
+        const { data: journalId, error: journalError } = await supabaseAdmin.rpc('create_journal_entry_rpc', {
+            entry_date: data.paymentDate || new Date().toISOString(),
+            description: `رواتب شهر ${data.period} - ${empName}`,
+            reference_type: 'payroll',
+            reference_id: insertedSlip.id,
+            lines: lines
         });
+
+        if (journalError) {
+            throw new Error('فشل إنشاء قيد الرواتب: ' + journalError.message);
+        }
+
+        // Update Slip with Journal ID
+        await supabaseAdmin.from('payroll_slips').update({ journal_entry_id: journalId }).eq('id', insertedSlip.id);
+
+        return { success: true, id: insertedSlip.id, journalId, message: 'تم اعتماد القسيمة وترحيل القيد بنجاح' };
+
+
+    } catch (error: any) {
+        throw new Error(error.message);
     }
-
-    // Credit: Other Deductions
-    // We need an account for this. Let's assume passed or generic?
-    // For now, if no account provided, we assume it just reduces the Net Payable without separate line?
-    // No, accounting must balance.
-    // If we have Other Deductions, we need a Credit account (e.g. Penalties Income).
-    // We'll skip for now if no account provided, assuming user handles via Net? No, must balance.
-    // We will assume 'Other Deductions' just reduces the Pay but needs a destination.
-    // Let's assume it's same as Absence for simplicity or add field later.
-
-    // Credit: Net Salary (Employee Payable Account)
-    lines.push({
-        accountId: data.employeeId,
-        description: `صافي راتب - ${data.period}`,
-        debit: 0,
-        credit: netSalary
-    });
-
-    // Check Balance (Simple check)
-    const totalDr = lines.reduce((s, l) => s + l.debit, 0);
-    const totalCr = lines.reduce((s, l) => s + l.credit, 0);
-
-    // If Imbalance (due to Absence/Others where user didn't specify account), 
-    // it implies the User wanted to reduce the Expense Debit directly?
-    // But he said "Basic Salary item (+) Debit".
-    // If there is imbalance, we might need to adjust.
-    // For the purpose of this task, we will strictly follow:
-    // User selects Accounts for everything. 
-    // If Absence Account is not selected, we assume Basic Salary entered is ALREADY deducted?
-    // No, user enters "Basic Salary". 
-    // *Correction*: We will force account selection or use defaults.
-
-    // 3. Create Journal Entry
-    const { id: journalId } = await createJournalEntry({
-        date: data.paymentDate,
-        description: `استحقاق راتب - ${data.period}`,
-        referenceType: 'payroll',
-        lines: lines
-    });
-
-    return journalId;
 }
 
 export async function getExpenseAccounts() {

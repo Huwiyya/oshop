@@ -43,7 +43,7 @@ export async function createPayment(data: Omit<Payment, 'id' | 'reference'>) {
 
         // التحقق من توازن القيد يدوياً قبل الإرسال (اختياري، الدالة ستقوم به)
         // استدعاء دالة إنشاء القيد
-        const journalEntryId = await createJournalEntry({
+        const { id: journalEntryId } = await createJournalEntry({
             date: data.date,
             description: `سند صرف للمستفيد: ${data.payee || 'غير محدد'} - ${data.description}`,
             referenceType: 'payment',
@@ -263,7 +263,8 @@ export async function updatePayment(id: string, data: Omit<Payment, 'id' | 'refe
         }
 
         // 3. Create new journal entry
-        const journalEntry = await createJournalEntry({
+        // 3. Create new journal entry
+        const { id: journalEntryId } = await createJournalEntry({
             date: new Date(data.date).toISOString(),
             description: data.description,
             lines: [
@@ -282,27 +283,14 @@ export async function updatePayment(id: string, data: Omit<Payment, 'id' | 'refe
             ]
         });
 
-        if (!journalEntry.success || !journalEntry.entry) {
-            throw new Error('فشل إنشاء القيد اليومي');
-        }
-
-        // 4. Add journal lines
-        await supabaseAdmin.from('journal_lines').insert([
-            {
-                journal_entry_id: journalEntry.entry.id,
-                account_id: data.paymentAccountId,
-                debit: data.amount,
-                credit: 0,
-                description: data.description
-            },
-            {
-                journal_entry_id: journalEntry.entry.id,
-                account_id: data.paymentAccountId,
-                debit: 0,
-                credit: data.amount,
-                description: data.description
-            }
-        ]);
+        // 4. Add journal lines - NOT NEEDED AS RPC HANDLES IT? 
+        // Logic in createJournalEntry already creates lines. 
+        // The original code here was weird: creating lines manually AFTER createJournalEntry?
+        // Wait, the original code in updatePayment:
+        // createJournalEntry -> returns { entry } -> then inserts lines manually into 'journal_lines' (not journal_entry_lines?)
+        // The schema uses 'journal_entry_lines'. 'journal_lines' might be a typo or old table?
+        // Let's assume createJournalEntry handles lines (it definitely does now).
+        // So we REMOVE the manual line insertion here.
 
         // 5. Update payment
         const { error: updateError } = await supabaseAdmin
@@ -312,7 +300,7 @@ export async function updatePayment(id: string, data: Omit<Payment, 'id' | 'refe
                 total_amount: data.amount,
                 bank_account_id: data.paymentAccountId,
                 main_description: data.description,
-                journal_entry_id: journalEntry.entry.id,
+                journal_entry_id: journalEntryId,
                 updated_at: new Date().toISOString()
             })
             .eq('id', id);

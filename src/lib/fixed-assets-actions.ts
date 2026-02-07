@@ -173,13 +173,23 @@ export async function createFixedAsset(data: {
             accumulated_depreciation: 0,
             cost_account_id: costAccount.id,
             accumulated_account_id: accDepAccount.id
-            // We don't link expense account per asset, usually stays at category level
         })
         .select()
         .single();
 
     if (error) throw new Error(error.message);
-    return newAsset;
+
+    // 6. Optional: Create Acquisition Journal Entry
+    // This assumes the user wants to record the purchase NOW.
+    // We need payment account info. For now, since args are limited, we skip auto-JE
+    // or we assume it's part of a separate Purchase Invoice flow.
+    // To strictly follow "Audit" requirements, we should return the account IDs 
+    // so the UI can prompt for "How did you pay?".
+
+    // However, if this is "Opening Balance", we might want to debit Asset, Credit Opening Balance Equity.
+    // Let's leave it as is but Return the IDs
+
+    return { ...newAsset, accounts: { cost: costAccount, accumulated: accDepAccount } };
 }
 
 // --- الإهلاك ---
@@ -198,12 +208,12 @@ export async function runDepreciation(date: string, note?: string) {
 
     if (!assets || assets.length === 0) return { count: 0, journalId: null };
 
-    const lines: JournalEntryLine[] = [];
+    // Prepare items for RPC
+    const items = [];
 
     for (const asset of assets) {
-        // Use Asset Specific Accumulated Account if exists, else fallback (though createFixedAsset ensures it exists now)
-        // Expenses still go to Category Account (usually)
-        const accAccountId = asset.accumulated_account_id; // Added column
+        // Use Asset Specific Accumulated Account if exists, else fallback
+        const accAccountId = asset.accumulated_account_id;
         const expAccountId = asset.category?.depreciation_account_id;
 
         if (!accAccountId || !expAccountId) {
@@ -223,40 +233,25 @@ export async function runDepreciation(date: string, note?: string) {
 
         if (monthlyDep <= 0.01) continue;
 
-        // Dr. Dep Expense (Category Level)
-        lines.push({
-            accountId: expAccountId,
-            description: `إهلاك - ${asset.name_ar}`,
-            debit: monthlyDep,
-            credit: 0
+        items.push({
+            asset_id: asset.id,
+            asset_name: asset.name_ar,
+            depreciation_amount: monthlyDep,
+            acc_dep_account_id: accAccountId,
+            exp_account_id: expAccountId
         });
-
-        // Cr. Accumulated Dep (Asset Specific Level)
-        lines.push({
-            accountId: accAccountId,
-            description: `مجمع إهلاك - ${asset.name_ar}`,
-            debit: 0,
-            credit: monthlyDep
-        });
-
-        // Update Asset Record
-        await supabaseAdmin
-            .from('fixed_assets')
-            .update({
-                accumulated_depreciation: asset.accumulated_depreciation + monthlyDep,
-                net_book_value: asset.net_book_value - monthlyDep
-            })
-            .eq('id', asset.id);
     }
 
-    if (lines.length === 0) return { count: 0, journalId: null };
+    if (items.length === 0) return { count: 0, journalId: null };
 
-    const { id: journalId } = await createJournalEntry({
-        date: date,
+    // Call RPC
+    const { data: result, error } = await supabaseAdmin.rpc('run_depreciation_rpc', {
+        entry_date: date,
         description: `قيد إهلاك دوري - ${note || date}`,
-        referenceType: 'depreciation',
-        lines: lines
+        items: items
     });
 
-    return { count: assets.length, journalId };
+    if (error) throw new Error(error.message);
+
+    return { count: result.count, journalId: result.journal_id };
 }

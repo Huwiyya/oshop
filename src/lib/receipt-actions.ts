@@ -39,7 +39,7 @@ export async function createReceipt(data: Omit<Receipt, 'id' | 'reference'>) {
 
         const journalDate = new Date(data.date);
 
-        const journalEntry = await createJournalEntry({
+        const { id: journalEntryId } = await createJournalEntry({
             date: journalDate.toISOString(),
             description: data.description,
             lines: [
@@ -58,28 +58,7 @@ export async function createReceipt(data: Omit<Receipt, 'id' | 'reference'>) {
             ]
         });
 
-        if (!journalEntry.success || !journalEntry.entry) {
-            throw new Error('Failed to create journal entry');
-        }
-
-        // 2. إضافة سطور القيد
-        // Line 1: Debit Cash/Bank Account
-        await supabaseAdmin.from('journal_lines').insert({
-            journal_entry_id: journalEntry.entry.id,
-            account_id: data.receiveAccountId,
-            debit: data.amount,
-            credit: 0,
-            description: data.description
-        });
-
-        // Line 2: Credit Revenue/Customer Account
-        await supabaseAdmin.from('journal_lines').insert({
-            journal_entry_id: journalEntry.entry.id,
-            account_id: data.creditAccountId, // ✅ Corrected
-            debit: 0,
-            credit: data.amount,
-            description: data.description
-        });
+        // 2. إضافة سطور القيد - REMOVED (Handled by RPC)
 
         // 3. إنشاء سند القبض
         const receiptNumber = `REC-${new Date().getFullYear()}-${String(Date.now()).slice(-4)}`;
@@ -98,7 +77,7 @@ export async function createReceipt(data: Omit<Receipt, 'id' | 'reference'>) {
                 bank_account_id: data.receiveAccountId,
                 main_description: data.description,
                 status: 'confirmed',
-                journal_entry_id: journalEntry.entry.id
+                journal_entry_id: journalEntryId
             })
             .select()
             .single();
@@ -308,7 +287,8 @@ export async function updateReceipt(id: string, data: Omit<Receipt, 'id' | 'refe
         }
 
         // 3. Create new journal entry
-        const journalEntry = await createJournalEntry({
+        // 3. Create new journal entry
+        const { id: journalEntryId } = await createJournalEntry({
             date: new Date(data.date).toISOString(),
             description: data.description,
             lines: [
@@ -327,27 +307,7 @@ export async function updateReceipt(id: string, data: Omit<Receipt, 'id' | 'refe
             ]
         });
 
-        if (!journalEntry.success || !journalEntry.entry) {
-            throw new Error('فشل إنشاء القيد اليومي');
-        }
-
-        // 4. Add journal lines
-        await supabaseAdmin.from('journal_lines').insert([
-            {
-                journal_entry_id: journalEntry.entry.id,
-                account_id: data.receiveAccountId,
-                debit: data.amount,
-                credit: 0,
-                description: data.description
-            },
-            {
-                journal_entry_id: journalEntry.entry.id,
-                account_id: data.receiveAccountId,
-                debit: 0,
-                credit: data.amount,
-                description: data.description
-            }
-        ]);
+        // 4. Add journal lines - NOT NEEDED (Handled by RPC)
 
         // 5. Update receipt
         const { error: updateError } = await supabaseAdmin
@@ -358,7 +318,7 @@ export async function updateReceipt(id: string, data: Omit<Receipt, 'id' | 'refe
                 total_amount: data.amount,
                 bank_account_id: data.receiveAccountId,
                 main_description: data.description,
-                journal_entry_id: journalEntry.entry.id,
+                journal_entry_id: journalEntryId,
                 updated_at: new Date().toISOString()
             })
             .eq('id', id);

@@ -134,11 +134,36 @@ export default function AccountingDashboard() {
                     title="حقوق الملكية"
                     value={metrics?.totalEquity || 0}
                     icon={DollarSign}
-                    description="رأس العمال والأرباح المحتجزة"
+                    description="رأس المال + الأرباح المحتجزة + صافي الدخل"
                     color="purple"
                     href="/accounting/financial-reports"
                 />
             </div>
+
+            {/* Balance Check Indicator */}
+            {metrics?.balanceCheck !== undefined && Math.abs(metrics.balanceCheck) > 0.01 && (
+                <div className="bg-red-50 border border-red-200 rounded-lg p-4 flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center">
+                        <Activity className="w-5 h-5 text-red-600" />
+                    </div>
+                    <div className="flex-1">
+                        <h3 className="font-semibold text-red-800">⚠️ تنبيه: المعادلة المحاسبية غير متوازنة</h3>
+                        <p className="text-sm text-red-600">
+                            الفرق: {formatCurrency(Math.abs(metrics.balanceCheck))} - يرجى مراجعة القيود المحاسبية
+                        </p>
+                    </div>
+                </div>
+            )}
+            {metrics?.balanceCheck !== undefined && Math.abs(metrics.balanceCheck) <= 0.01 && (
+                <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-3 flex items-center gap-2">
+                    <div className="w-8 h-8 rounded-full bg-emerald-100 flex items-center justify-center">
+                        <Activity className="w-4 h-4 text-emerald-600" />
+                    </div>
+                    <p className="text-sm text-emerald-700 font-medium">
+                        ✓ المعادلة المحاسبية متوازنة (الأصول = الالتزامات + حقوق الملكية)
+                    </p>
+                </div>
+            )}
 
             {/* Financial Statements Grid */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">

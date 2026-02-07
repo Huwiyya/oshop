@@ -210,12 +210,13 @@ export default function FinancialReportsPage() {
                                         <h3 className="text-center font-bold bg-slate-100 p-2 rounded">الأصول (Assets)</h3>
                                         <div className="space-y-1">
                                             {balanceSheet.assets.map((a: any) => (
-                                                !a.is_parent && (
-                                                    <div key={a.id} className="flex justify-between text-sm py-1 border-b border-dashed">
-                                                        <span>{a.name_ar}</span>
-                                                        <span>{formatCurrency(a.balance)}</span>
-                                                    </div>
-                                                )
+                                                <div key={a.id} className={`flex justify-between text-sm py-1 border-b border-dashed ${a.is_parent ? 'font-bold bg-slate-50' : ''}`}>
+                                                    <span>
+                                                        {a.name_ar}
+                                                        <span className="text-xs text-slate-400 mx-2">({a.account_code})</span>
+                                                    </span>
+                                                    <span>{formatCurrency(a.balance)}</span>
+                                                </div>
                                             ))}
                                         </div>
                                         <div className="bg-slate-200 p-2 flex justify-between font-bold rounded">
@@ -231,13 +232,13 @@ export default function FinancialReportsPage() {
                                             <h3 className="text-center font-bold bg-slate-100 p-2 rounded">الخصوم (Liabilities)</h3>
                                             <div className="space-y-1">
                                                 {balanceSheet.liabilities.map((a: any) => (
-                                                    !a.is_parent && (
-                                                        <div key={a.id} className="flex justify-between text-sm py-1 border-b border-dashed">
-                                                            <span>{a.name_ar}</span>
-                                                            {/* Liabilities usually Credit (negative), show positive */}
-                                                            <span>{formatCurrency(Math.abs(Number(a.balance || 0)))}</span>
-                                                        </div>
-                                                    )
+                                                    <div key={a.id} className={`flex justify-between text-sm py-1 border-b border-dashed ${a.is_parent ? 'font-bold bg-slate-50' : ''}`}>
+                                                        <span>
+                                                            {a.name_ar}
+                                                            <span className="text-xs text-slate-400 mx-2">({a.account_code})</span>
+                                                        </span>
+                                                        <span>{formatCurrency(a.balance)}</span>
+                                                    </div>
                                                 ))}
                                             </div>
                                             <div className="bg-slate-200 p-2 flex justify-between font-bold rounded">
@@ -251,12 +252,13 @@ export default function FinancialReportsPage() {
                                             <h3 className="text-center font-bold bg-slate-100 p-2 rounded">حقوق الملكية (Equity)</h3>
                                             <div className="space-y-1">
                                                 {balanceSheet.equity.map((a: any) => (
-                                                    !a.is_parent && (
-                                                        <div key={a.id} className="flex justify-between text-sm py-1 border-b border-dashed">
-                                                            <span>{a.name_ar}</span>
-                                                            <span>{formatCurrency(Math.abs(Number(a.balance || 0)))}</span>
-                                                        </div>
-                                                    )
+                                                    <div key={a.id} className={`flex justify-between text-sm py-1 border-b border-dashed ${a.is_parent ? 'font-bold bg-slate-50' : ''}`}>
+                                                        <span>
+                                                            {a.name_ar}
+                                                            <span className="text-xs text-slate-400 mx-2">({a.account_code})</span>
+                                                        </span>
+                                                        <span>{formatCurrency(a.balance)}</span>
+                                                    </div>
                                                 ))}
                                             </div>
                                             <div className="bg-slate-200 p-2 flex justify-between font-bold rounded">

@@ -97,25 +97,22 @@ export default function NewJournalEntryPage() {
             };
         });
 
-        const res = await createJournalEntry({
-            date,
-            description,
-            lines: finalLines.map((l, index) => ({
-                accountId: l.accountId,
-                description: description,
-                debit: Number(l.debit),
-                credit: Number(l.credit),
-                // line_number not expected by journal-actions createJournalEntry local type, 
-                // but if we need it, we should add it. journal-actions.ts defines JournalEntryLine locally without line_number.
-                // It adds it manually in the loop. So we don't pass it.
-            }))
-        });
+        try {
+            await createJournalEntry({
+                date,
+                description,
+                lines: finalLines.map((l, index) => ({
+                    accountId: l.accountId,
+                    description: description,
+                    debit: Number(l.debit),
+                    credit: Number(l.credit),
+                }))
+            });
 
-        if (res.success) {
             router.push('/admin/accounting/journal');
             router.refresh();
-        } else {
-            alert('Error: ' + res.error);
+        } catch (error: any) {
+            alert('Error: ' + error.message);
             setIsLoading(false);
         }
     };

@@ -97,6 +97,17 @@ function JournalEntriesContent() {
                                         </TableCell>
                                         <TableCell className="text-center">
                                             <div className="flex items-center justify-center gap-1">
+                                                {/* زر التعديل - فقط للقيود اليدوية */}
+                                                {entry.reference_type === 'manual' && (
+                                                    <Button
+                                                        variant="ghost"
+                                                        size="sm"
+                                                        className="h-8 w-8 p-0"
+                                                        onClick={() => router.push(`/accounting/journal-entries/edit/${entry.id}`)}
+                                                    >
+                                                        <Pencil className="w-4 h-4 text-blue-600" />
+                                                    </Button>
+                                                )}
                                                 <DeleteJournalEntryButton
                                                     entry={entry}
                                                     onSuccess={loadData}

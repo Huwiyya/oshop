@@ -22,6 +22,7 @@ export type DashboardSummary = {
     totalRevenue: number;
     totalExpenses: number;
     netIncome: number;
+    balanceCheck?: number; // للتحقق من توازن المعادلة المحاسبية
 };
 
 // جلب ملخص الحسابات حسب النوع (للمركز المالي وقائمة الدخل)
@@ -144,9 +145,28 @@ export async function getDashboardMetrics(fromDate?: string, toDate?: string): P
 
     const totalAssets = sumBalance(summary.assets);
     const totalLiabilities = sumBalance(summary.liabilities);
-    const totalEquity = sumBalance(summary.equity);
+    const totalEquityBase = sumBalance(summary.equity);
     const totalRevenue = sumBalance(summary.revenue);
     const totalExpenses = sumBalance(summary.expenses);
+
+    // حساب صافي الدخل
+    const netIncome = totalRevenue - totalExpenses;
+
+    // ✅ إصلاح محاسبي: حقوق الملكية = رأس المال + الأرباح المحتجزة + صافي الدخل
+    const totalEquity = totalEquityBase + netIncome;
+
+    // ✅ التحقق من توازن المعادلة المحاسبية: الأصول = الالتزامات + حقوق الملكية
+    const balanceCheck = totalAssets - (totalLiabilities + totalEquity);
+
+    // تنبيه في حالة عدم التوازن (مع هامش خطأ 0.01 للتقريب)
+    if (Math.abs(balanceCheck) > 0.01) {
+        console.warn('⚠️ المعادلة المحاسبية غير متوازنة!', {
+            totalAssets,
+            totalLiabilities,
+            totalEquity,
+            difference: balanceCheck
+        });
+    }
 
     return {
         totalAssets,
@@ -154,7 +174,8 @@ export async function getDashboardMetrics(fromDate?: string, toDate?: string): P
         totalEquity,
         totalRevenue,
         totalExpenses,
-        netIncome: totalRevenue - totalExpenses
+        netIncome,
+        balanceCheck
     };
 }
 
@@ -631,8 +652,8 @@ export async function deleteBankAccount(id: string) {
 
 // --- إدارة الحسابات (تعديل وحذف) ---
 
-export async function getAllAccounts() {
-    const { data, error } = await supabaseAdmin
+export async function getAllAccounts(maxLevel?: number) {
+    let query = supabaseAdmin
         .from('accounts')
         .select(`
             *,
@@ -640,8 +661,31 @@ export async function getAllAccounts() {
         `)
         .order('account_code', { ascending: true });
 
+    if (maxLevel) {
+        query = query.lte('level', maxLevel);
+    }
+
+    const { data, error } = await query;
+
     if (error) {
         console.error('Error fetching accounts:', error);
+        return [];
+    }
+    return data;
+}
+
+export async function getAccountChildren(parentId: string) {
+    const { data, error } = await supabaseAdmin
+        .from('accounts')
+        .select(`
+            *,
+            account_type:account_types(name_ar)
+        `)
+        .eq('parent_id', parentId)
+        .order('account_code', { ascending: true });
+
+    if (error) {
+        console.error('Error fetching account children:', error);
         return [];
     }
     return data;
