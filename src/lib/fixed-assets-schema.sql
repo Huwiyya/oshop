@@ -126,7 +126,8 @@ CREATE OR REPLACE FUNCTION create_fixed_asset_rpc(
     p_location TEXT,
     p_responsible_person TEXT,
     p_serial_number TEXT,
-    p_warranty_expiry DATE
+    p_warranty_expiry DATE,
+    p_payment_account_id TEXT DEFAULT '111001' -- ✅ حساب الدفع (نقدية/بنك)
 )
 RETURNS TEXT AS $$
 DECLARE
@@ -134,6 +135,8 @@ DECLARE
     v_asset_id TEXT;
     v_account_id TEXT;
     v_parent_code TEXT;
+    v_journal_id TEXT;
+    v_lines JSONB;
 BEGIN
     -- Generate asset code
     v_asset_code := generate_asset_code(p_asset_category, p_asset_subcategory);
@@ -209,6 +212,36 @@ BEGIN
         p_serial_number,
         p_warranty_expiry
     ) RETURNING id INTO v_asset_id;
+    
+    -- ✅ إنشاء القيد المحاسبي لشراء الأصل
+    -- من حـ/ الأصول الثابتة (مدين)
+    -- إلى حـ/ النقدية/البنك (دائن)
+    v_lines := jsonb_build_array(
+        -- Debit: Fixed Asset Account
+        jsonb_build_object(
+            'accountId', v_account_id,
+            'description', 'شراء أصل ثابت: ' || p_name_ar,
+            'debit', p_acquisition_cost,
+            'credit', 0
+        ),
+        -- Credit: Payment Account (Cash/Bank)
+        jsonb_build_object(
+            'accountId', p_payment_account_id,
+            'description', 'دفع تكلفة شراء: ' || p_name_ar,
+            'debit', 0,
+            'credit', p_acquisition_cost
+        )
+    );
+    
+    -- Create journal entry
+    v_journal_id := create_journal_entry_rpc(
+        p_entry_date := p_acquisition_date,
+        p_description := 'شراء أصل ثابت: ' || p_name_ar || ' - ' || v_asset_code,
+        p_reference_type := 'asset_acquisition',
+        p_reference_id := v_asset_id,
+        p_lines := v_lines,
+        p_is_hidden := FALSE
+    );
     
     RETURN v_asset_id;
 END;

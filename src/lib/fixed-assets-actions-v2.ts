@@ -49,6 +49,7 @@ export interface CreateAssetDataV2 {
     responsible_person?: string;
     serial_number?: string;
     warranty_expiry?: string;
+    payment_account_id?: string; // ✅ حساب الدفع
 }
 
 // --- CRUD Operations ---
@@ -108,7 +109,8 @@ export async function createFixedAssetV2(assetData: CreateAssetDataV2) {
             p_location: assetData.location || null,
             p_responsible_person: assetData.responsible_person || null,
             p_serial_number: assetData.serial_number || null,
-            p_warranty_expiry: assetData.warranty_expiry || null
+            p_warranty_expiry: assetData.warranty_expiry || null,
+            p_payment_account_id: assetData.payment_account_id || '111001' // ✅ Default: نقدية
         });
 
         if (error) throw error;
