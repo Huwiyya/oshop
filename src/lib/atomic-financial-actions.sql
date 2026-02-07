@@ -484,7 +484,7 @@ BEGIN
     LOOP
         -- Construct Reversal Lines
         reversal_lines := '[]'::JSONB;
-        FOR line_rec IN SELECT * FROM journal_entry_lines WHERE entry_id = je_record.id
+        FOR line_rec IN SELECT * FROM journal_entry_lines WHERE journal_entry_id = je_record.id
         LOOP
             -- Swap Debit/Credit
             reversal_lines := reversal_lines || jsonb_build_object(
@@ -561,7 +561,7 @@ BEGIN
     FOR je_record IN SELECT * FROM journal_entries WHERE reference_id = invoice_number_param AND status = 'posted'
     LOOP
         reversal_lines := '[]'::JSONB;
-        FOR line_rec IN SELECT * FROM journal_entry_lines WHERE entry_id = je_record.id
+        FOR line_rec IN SELECT * FROM journal_entry_lines WHERE journal_entry_id = je_record.id
         LOOP
             reversal_lines := reversal_lines || jsonb_build_object(
                 'accountId', line_rec.account_id,
