@@ -29,15 +29,17 @@ export async function GET() {
             account_code: expCode, name_ar: 'مصروف متنوع', account_type_id: expType, level: 4
         }).select().single();
 
+        if (!boxAcc || !revAcc || !expAcc) throw new Error('Failed to create test accounts');
+
         log('Setup Complete', { boxCode, revCode, expCode });
 
         // 2. Create Receipt (Multi-line)
         log('Creating Receipt');
         const { data: receipt, error: rErr } = await supabaseAdmin.rpc('create_receipt_rpc', {
-            p_header: { date: new Date().toISOString().split('T')[0], boxAccountId: boxAcc.id, notes: 'Test Receipt' },
+            p_header: { date: new Date().toISOString().split('T')[0], boxAccountId: boxAcc?.id, notes: 'Test Receipt' },
             p_lines: [
-                { accountId: revAcc.id, amount: 100, description: 'Revenue 1' },
-                { accountId: revAcc.id, amount: 50, description: 'Revenue 2' }
+                { accountId: revAcc?.id, amount: 100, description: 'Revenue 1' },
+                { accountId: revAcc?.id, amount: 50, description: 'Revenue 2' }
             ]
         });
         if (rErr) throw new Error('Create Receipt Failed: ' + rErr.message);
@@ -51,42 +53,42 @@ export async function GET() {
         log('Triggers on receipt_lines', rTriggers);
 
         // Debug: Check JEs
-        const { data: jes } = await supabaseAdmin.from('journal_entries').select('*, journal_entry_lines(*)').eq('reference_id', receipt.number);
+        const { data: jes } = await supabaseAdmin.from('journal_entries').select('*, journal_entry_lines(*)').eq('reference_id', receipt?.number);
         log('JEs for Receipt', jes);
 
         // Verify Balance (Box should increase by 150)
-        const { data: boxAfterRec } = await supabaseAdmin.from('accounts').select('current_balance').eq('id', boxAcc.id).single();
-        log('Box Balance after Receipt', boxAfterRec.current_balance);
+        const { data: boxAfterRec } = await supabaseAdmin.from('accounts').select('current_balance').eq('id', boxAcc?.id).single();
+        log('Box Balance after Receipt', boxAfterRec?.current_balance);
 
         // 3. Create Payment (Multi-line)
         log('Creating Payment');
         const { data: payment, error: pErr } = await supabaseAdmin.rpc('create_payment_rpc', {
-            p_header: { date: new Date().toISOString().split('T')[0], boxAccountId: boxAcc.id, notes: 'Test Payment' },
+            p_header: { date: new Date().toISOString().split('T')[0], boxAccountId: boxAcc?.id, notes: 'Test Payment' },
             p_lines: [
-                { accountId: expAcc.id, amount: 20, description: 'Expense 1' },
-                { accountId: expAcc.id, amount: 30, description: 'Expense 2' }
+                { accountId: expAcc?.id, amount: 20, description: 'Expense 1' },
+                { accountId: expAcc?.id, amount: 30, description: 'Expense 2' }
             ]
         });
         if (pErr) throw new Error('Create Payment Failed: ' + pErr.message);
         log('Payment Created', payment);
 
         // Verify Balance (Box should decrease by 50 -> Net +100)
-        const { data: boxAfterPay } = await supabaseAdmin.from('accounts').select('current_balance').eq('id', boxAcc.id).single();
-        log('Box Balance after Payment', boxAfterPay.current_balance);
+        const { data: boxAfterPay } = await supabaseAdmin.from('accounts').select('current_balance').eq('id', boxAcc?.id).single();
+        log('Box Balance after Payment', boxAfterPay?.current_balance);
 
         // 4. Delete Payment
-        log('Deleting Payment (Atomic)', payment.id);
+        log('Deleting Payment (Atomic)', payment?.id);
         const { data: del, error: dErr } = await supabaseAdmin.rpc('delete_document_rpc', {
-            p_id: payment.id,
+            p_id: payment?.id,
             p_type: 'payment'
         });
         if (dErr) throw new Error('Delete Payment Failed: ' + dErr.message);
 
         // Verify Balance (Should return to +150)
-        const { data: boxAfterDel } = await supabaseAdmin.from('accounts').select('current_balance').eq('id', boxAcc.id).single();
-        log('Box Balance after Delete', boxAfterDel.current_balance);
+        const { data: boxAfterDel } = await supabaseAdmin.from('accounts').select('current_balance').eq('id', boxAcc?.id).single();
+        log('Box Balance after Delete', boxAfterDel?.current_balance);
 
-        if (Math.abs(boxAfterDel.current_balance - 150) > 0.1) throw new Error('Balance mismatch after delete');
+        if (Math.abs((boxAfterDel?.current_balance || 0) - 150) > 0.1) throw new Error('Balance mismatch after delete');
 
         report.final_status = 'Success';
         return NextResponse.json({ success: true, report });

@@ -31,7 +31,7 @@ export async function GET() {
             total_credit: 100
         }).select().single();
 
-        if (jeDirectError) throw new Error('Setup JE Failed: ' + jeDirectError.message);
+        if (jeDirectError || !jeDirect) throw new Error('Setup JE Failed: ' + jeDirectError?.message);
         jeId = jeDirect.id;
         steps.push({ msg: 'Posted JE Created', id: jeId });
 
@@ -57,7 +57,7 @@ export async function GET() {
             journal_entry_id: jeId
         }).select().single();
 
-        if (invError) throw new Error('Setup Invoice Failed: ' + invError.message);
+        if (invError || !inv) throw new Error('Setup Invoice Failed: ' + invError?.message);
         invoiceId = inv.id;
         steps.push({ msg: 'Invoice Created linked to JE', id: invoiceId });
 

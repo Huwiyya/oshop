@@ -116,7 +116,7 @@ export async function POST() {
         return NextResponse.json({
             success: true,
             message: 'تم إنشاء التصنيفات الافتراضية بنجاح',
-            count: data.length
+            count: data?.length || 0
         });
     } catch (error: any) {
         return NextResponse.json({
