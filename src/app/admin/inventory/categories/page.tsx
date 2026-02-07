@@ -22,7 +22,7 @@ import { Label } from '@/components/ui/label';
 import { Plus, Edit, Trash2, ArrowLeft } from 'lucide-react';
 import { useToast } from '@/components/ui/use-toast';
 import { getCategories, createCategory, updateCategory, deleteCategory, InventoryCategory } from '@/lib/category-actions';
-import { getAllActiveAccounts } from '@/lib/account-actions';
+import { getAllAccounts } from '@/lib/accounting-actions';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useRouter } from 'next/navigation';
 
@@ -41,7 +41,7 @@ export default function CategoriesPage() {
         setLoading(true);
         const [cats, accs] = await Promise.all([
             getCategories(),
-            getAllActiveAccounts()
+            getAllAccounts()
         ]);
         setCategories(cats || []);
         setAccounts(accs || []);
