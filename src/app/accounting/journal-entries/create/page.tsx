@@ -15,14 +15,7 @@ import { useToast } from '@/components/ui/use-toast';
 import { createJournalEntry } from '@/lib/journal-actions';
 import { supabase } from '@/lib/supabase';
 import { getInventoryItems } from '@/lib/inventory-actions';
-import {
-    Command,
-    CommandEmpty,
-    CommandGroup,
-    CommandInput,
-    CommandItem,
-    CommandList,
-} from "@/components/ui/command"
+import { AccountSelector } from '@/components/accounting/AccountSelector';
 import {
     Popover,
     PopoverContent,
@@ -31,7 +24,8 @@ import {
 
 // Quick helper to fetch all accounts
 async function getAccounts() {
-    const { data } = await supabase.from('accounts').select('id, name_ar, account_code').eq('is_active', true).neq('is_parent', true).order('account_code');
+    // Fetch all active accounts. The AccountSelector component will handle filtering for Level 4.
+    const { data } = await supabase.from('accounts').select('id, name_ar, name_en, account_code, level, currency').eq('is_active', true).order('account_code');
     return data || [];
 }
 
@@ -264,63 +258,6 @@ export default function CreateJournalEntryPage() {
             </Card>
         </div>
     );
-}
-
-function AccountSelector({ accounts, value, onChange }: { accounts: any[], value: string, onChange: (val: string) => void }) {
-    const [open, setOpen] = useState(false)
-    const selectedAccount = accounts.find((account) => account.id === value)
-
-    return (
-        <Popover open={open} onOpenChange={setOpen}>
-            <PopoverTrigger asChild>
-                <Button
-                    variant="outline"
-                    role="combobox"
-                    aria-expanded={open}
-                    className="w-full justify-between font-normal px-2"
-                >
-                    {selectedAccount
-                        ? <span className="truncate flex items-center gap-2"><span className="font-mono text-slate-500 text-xs">{selectedAccount.account_code}</span> {selectedAccount.name_ar}</span>
-                        : <span className="text-slate-500">اختر الحساب...</span>}
-                    <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-                </Button>
-            </PopoverTrigger>
-            <PopoverContent className="w-[350px] p-0" align="start">
-                <Command filter={(value, search) => {
-                    const acc = accounts.find(a => a.id === value);
-                    if (!acc) return 0;
-                    const text = `${acc.account_code} ${acc.name_ar}`.toLowerCase();
-                    return text.includes(search.toLowerCase()) ? 1 : 0;
-                }}>
-                    <CommandInput placeholder="بحث برقم الحساب أو الاسم..." />
-                    <CommandList>
-                        <CommandEmpty>لا يوجد حساب.</CommandEmpty>
-                        <CommandGroup className="max-h-[300px] overflow-auto">
-                            {accounts.map((account) => (
-                                <CommandItem
-                                    key={account.id}
-                                    value={account.id}
-                                    onSelect={(currentValue) => {
-                                        onChange(currentValue)
-                                        setOpen(false)
-                                    }}
-                                >
-                                    <Check
-                                        className={cn(
-                                            "mr-2 h-4 w-4",
-                                            value === account.id ? "opacity-100" : "opacity-0"
-                                        )}
-                                    />
-                                    <span className="font-mono text-slate-500 mr-2">{account.account_code}</span>
-                                    <span className="truncate">{account.name_ar}</span>
-                                </CommandItem>
-                            ))}
-                        </CommandGroup>
-                    </CommandList>
-                </Command>
-            </PopoverContent>
-        </Popover>
-    )
 }
 
 function InventoryPopover({ line, items, onSave }: { line: LineItem, items: any[], onSave: (id: string, qty: number) => void }) {

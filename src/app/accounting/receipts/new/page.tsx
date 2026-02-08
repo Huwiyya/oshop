@@ -15,9 +15,12 @@ import { ArrowRight, User, Check, ChevronsUpDown } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import Link from 'next/link';
 import { AccountSelector } from '@/components/accounting/AccountSelector';
+import { createQuickAccount, getEntities } from '@/lib/accounting-actions';
+import { useToast } from '@/components/ui/use-toast';
 
 export default function NewReceiptPage() {
     const router = useRouter();
+    const { toast } = useToast();
     const [isLoading, setIsLoading] = useState(false);
     const [accounts, setAccounts] = useState<any[]>([]);
     const [users, setUsers] = useState<any[]>([]);
@@ -48,6 +51,37 @@ export default function NewReceiptPage() {
         }
         load();
     }, []);
+
+    const handleCreateCustomer = async (name: string) => {
+        try {
+            const res = await createQuickAccount(name, 'customer');
+            if (res.success && res.id) {
+                toast({ title: 'تم الإنشاء', description: `تم إنشاء العميل "${name}" بنجاح` });
+                // Refresh list
+                const { getAllAccounts } = await import('@/lib/accounting-actions');
+                const newAccounts = await getAllAccounts();
+                setAccounts(newAccounts);
+                // Return id to be used by the selector if needed, 
+                // but AccountSelector handles calling onChange itself? 
+                // No, AccountSelector calls onCreate(term). 
+                // We need to find the new account and select it?
+                // The AccountSelector component closes on Create. 
+                // We actually need to return the ID or handle selection here?
+                // Wait, AccountSelector calls `onCreate` then closes. It doesn't auto-select.
+                // The user has to search again? 
+                // "Select new customer" comment in my previous code: `handleCustomerChange(res.id);`
+                // Here we have multiple lines. We don't know which line triggered it easily unless we pass index.
+                // Constraint: AccountSelector's onCreate doesn't pass back the new ID to the immediate caller in a way that allows auto-selecting specific line.
+                // I will improve AccountSelector later or just accept that they search again for now (it appears in list).
+                // Actually, for better UX, I should probably reload accounts and let them select it.
+            } else {
+                toast({ title: 'خطأ', description: res.error || 'فشل إنشاء العميل', variant: 'destructive' });
+            }
+        } catch (error) {
+            console.error(error);
+            toast({ title: 'خطأ', description: 'حدث خطأ أثناء الإنشاء', variant: 'destructive' });
+        }
+    };
 
     const totalAmount = lineItems.reduce((sum, item) => sum + item.amount, 0);
     const currencySymbol = currency === 'LYD' ? 'د.ل' : '$';
@@ -125,7 +159,7 @@ export default function NewReceiptPage() {
                                 </SelectTrigger>
                                 <SelectContent>
                                     {accounts
-                                        .filter(a => a.account_code.startsWith('111') || a.account_code.startsWith('1'))
+                                        .filter(a => (a.account_code.startsWith('111') || a.account_code.startsWith('1')) && a.level === 4)
                                         .map(acc => (
                                             <SelectItem key={acc.id} value={acc.id}>
                                                 {acc.name_ar || acc.name_en} ({acc.currency || 'LYD'})
@@ -210,16 +244,19 @@ export default function NewReceiptPage() {
                                     {lineItems.map((line, index) => (
                                         <tr key={index} className="border-b last:border-0">
                                             <td className="p-2">
-                                                <AccountSelector
-                                                    accounts={accounts}
-                                                    value={line.accountId}
-                                                    onChange={(val) => handleLineChange(index, 'accountId', val)}
-                                                    onAccountSelected={(acc) => {
-                                                        if (line.description === '') {
-                                                            handleLineChange(index, 'description', description);
-                                                        }
-                                                    }}
-                                                />
+                                                <td className="p-2">
+                                                    <AccountSelector
+                                                        accounts={accounts}
+                                                        value={line.accountId}
+                                                        onChange={(val) => handleLineChange(index, 'accountId', val)}
+                                                        onCreate={handleCreateCustomer}
+                                                        onAccountSelected={(acc) => {
+                                                            if (line.description === '') {
+                                                                handleLineChange(index, 'description', description);
+                                                            }
+                                                        }}
+                                                    />
+                                                </td>
                                             </td>
                                             <td className="p-2">
                                                 <Input

@@ -11,13 +11,14 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Trash, ArrowLeft, Plus } from 'lucide-react';
-import { getEntities } from '@/lib/accounting-actions';
+import { createQuickAccount, getEntities } from '@/lib/accounting-actions'; // Updated import
 import { getInventoryItems } from '@/lib/inventory-actions';
 import { createSalesInvoice, type CreateSalesInvoiceData, type SalesInvoiceItem, getAvailableCardLayers } from '@/lib/sales-actions';
 import { useToast } from '@/components/ui/use-toast';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { formatCurrency } from '@/lib/utils';
 import { Textarea } from '@/components/ui/textarea';
+import { AccountSelector } from '@/components/accounting/AccountSelector'; // Import AccountSelector
 
 export default function CreateSalesInvoice() {
     const router = useRouter();
@@ -61,6 +62,26 @@ export default function CreateSalesInvoice() {
                 customerId,
                 currency: customer.currency as any
             }));
+        }
+    };
+
+    // Quick Create Customer Handler
+    const handleCreateCustomer = async (name: string) => {
+        try {
+            const res = await createQuickAccount(name, 'customer');
+            if (res.success && res.id) {
+                toast({ title: 'تم الإنشاء', description: `تم إنشاء العميل "${name}" بنجاح` });
+                // Refresh list
+                const newCustomers = await getEntities('customer');
+                setCustomers(newCustomers || []);
+                // Select new customer
+                handleCustomerChange(res.id);
+            } else {
+                toast({ title: 'خطأ', description: res.error || 'فشل إنشاء العميل', variant: 'destructive' });
+            }
+        } catch (error) {
+            console.error(error);
+            toast({ title: 'خطأ', description: 'حدث خطأ أثناء الإنشاء', variant: 'destructive' });
         }
     };
 
@@ -117,16 +138,14 @@ export default function CreateSalesInvoice() {
                         <div className="grid grid-cols-2 gap-4">
                             <div className="space-y-2">
                                 <Label>العميل</Label>
-                                <Select onValueChange={handleCustomerChange}>
-                                    <SelectTrigger>
-                                        <SelectValue placeholder="اختر العميل" />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        {customers.map(c => (
-                                            <SelectItem key={c.id} value={c.id}>{c.name_ar}</SelectItem>
-                                        ))}
-                                    </SelectContent>
-                                </Select>
+                                <AccountSelector
+                                    accounts={customers}
+                                    value={formData.customerId}
+                                    onChange={(val) => handleCustomerChange(val)}
+                                    category="customer"
+                                    onCreate={handleCreateCustomer}
+                                    placeholder="اختر العميل..."
+                                />
                             </div>
                             <div className="space-y-2">
                                 <Label>تاريخ الفاتورة</Label>

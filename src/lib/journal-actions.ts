@@ -62,11 +62,11 @@ export async function createJournalEntry(data: {
 }) {
     // 1. Call the Atomic RPC function (Handles Balancing & Journal Creation)
     const { data: entryId, error } = await supabaseAdmin.rpc('create_journal_entry_rpc', {
-        entry_date: data.date,
-        description: data.description,
-        reference_type: data.referenceType || 'manual',
-        reference_id: data.referenceId,
-        lines: data.lines
+        p_entry_date: data.date,
+        p_description: data.description,
+        p_reference_type: data.referenceType || 'manual',
+        p_reference_id: data.referenceId ?? null,
+        p_lines: data.lines
     });
 
     if (error) {

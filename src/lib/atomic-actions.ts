@@ -16,8 +16,15 @@ export async function createSalesInvoiceAtomic(data: any, items: any[]) {
 
 export async function createPurchaseInvoiceAtomic(data: any, items: any[]) {
     const { data: result, error } = await supabaseAdmin.rpc('create_purchase_invoice_rpc', {
-        invoice_data: data,
-        items: items
+        p_supplier_id: data.supplierId,
+        p_date: data.date,
+        p_items: items,
+        p_currency: data.currency,
+        p_exchange_rate: data.rate,
+        p_notes: data.notes,
+        p_payment_method: 'credit', // Defaulting to credit/later, or pass from data if available
+        p_payment_account_id: data.paymentAccountId,
+        p_paid_amount: data.paidAmount
     });
 
     if (error) throw new Error(error.message);

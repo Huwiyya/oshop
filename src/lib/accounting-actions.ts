@@ -729,3 +729,51 @@ export async function deleteAccount(id: string) {
     if (error) return { success: false, error: error.message };
     return { success: true };
 }
+
+export async function createQuickAccount(name: string, type: 'supplier' | 'customer') {
+    // 1. Determine Parent Code: 211 (Liabilities -> Payables) or 112 (Assets -> Receivables)
+    // Adjust based on typical depth. If 211 is parent, we create 211001. 
+    // If 2110 is parent, we create 211001. 
+    // Let's assume 211 is the main "Suppliers" header and 112 is "Customers".
+    // Or 2110 / 1120 if they exist.
+
+    let parentCode = type === 'supplier' ? '2110' : '1120';
+
+    // Check if 2110/1120 exists, if not fallback to 211/112
+    let { data: parent } = await supabaseAdmin
+        .from('accounts')
+        .select('id, account_type_id')
+        .eq('account_code', parentCode)
+        .single();
+
+    if (!parent) {
+        // Fallback
+        parentCode = type === 'supplier' ? '211' : '112';
+        const { data: fallbackParent } = await supabaseAdmin
+            .from('accounts')
+            .select('id, account_type_id')
+            .eq('account_code', parentCode)
+            .single();
+        parent = fallbackParent;
+    }
+
+    if (!parent) {
+        return { success: false, error: `Parent account for ${type} not found (checked ${type === 'supplier' ? '2110/211' : '1120/112'})` };
+    }
+
+    // 2. Create via RPC
+    const { data: newAccountId, error } = await supabaseAdmin.rpc('create_hierarchical_account_rpc', {
+        p_name_ar: name,
+        p_name_en: name, // Default English name to same
+        p_parent_id: parent.id,
+        p_description: `Quick created ${type}`,
+        p_currency: 'LYD'
+    });
+
+    if (error) {
+        return { success: false, error: error.message };
+    }
+
+    // Return the new account ID so the UI can select it
+    return { success: true, id: newAccountId };
+}

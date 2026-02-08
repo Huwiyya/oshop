@@ -15,9 +15,12 @@ import Link from 'next/link';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
 import { AccountSelector } from '@/components/accounting/AccountSelector';
+import { createQuickAccount } from '@/lib/accounting-actions';
+import { useToast } from '@/components/ui/use-toast';
 
 export default function NewPaymentPage() {
     const router = useRouter();
+    const { toast } = useToast();
     const [isLoading, setIsLoading] = useState(false);
     const [accounts, setAccounts] = useState<any[]>([]);
     const [users, setUsers] = useState<any[]>([]);
@@ -48,6 +51,24 @@ export default function NewPaymentPage() {
         }
         load();
     }, []);
+
+    const handleCreateSupplier = async (name: string) => {
+        try {
+            const res = await createQuickAccount(name, 'supplier');
+            if (res.success && res.id) {
+                toast({ title: 'تم الإنشاء', description: `تم إنشاء المورد "${name}" بنجاح` });
+                // Refresh list
+                const { getAllAccounts } = await import('@/lib/accounting-actions');
+                const newAccounts = await getAllAccounts();
+                setAccounts(newAccounts);
+            } else {
+                toast({ title: 'خطأ', description: res.error || 'فشل إنشاء المورد', variant: 'destructive' });
+            }
+        } catch (error) {
+            console.error(error);
+            toast({ title: 'خطأ', description: 'حدث خطأ أثناء الإنشاء', variant: 'destructive' });
+        }
+    };
 
     const totalAmount = lineItems.reduce((sum, item) => sum + item.amount, 0);
     const currencySymbol = currency === 'LYD' ? 'د.ل' : '$';
@@ -209,16 +230,19 @@ export default function NewPaymentPage() {
                                     {lineItems.map((line, index) => (
                                         <tr key={index} className="border-b last:border-0">
                                             <td className="p-2">
-                                                <AccountSelector
-                                                    accounts={accounts}
-                                                    value={line.accountId}
-                                                    onChange={(val) => handleLineChange(index, 'accountId', val)}
-                                                    onAccountSelected={(acc) => {
-                                                        if (line.description === '') {
-                                                            handleLineChange(index, 'description', description);
-                                                        }
-                                                    }}
-                                                />
+                                                <td className="p-2">
+                                                    <AccountSelector
+                                                        accounts={accounts}
+                                                        value={line.accountId}
+                                                        onChange={(val) => handleLineChange(index, 'accountId', val)}
+                                                        onCreate={handleCreateSupplier}
+                                                        onAccountSelected={(acc) => {
+                                                            if (line.description === '') {
+                                                                handleLineChange(index, 'description', description);
+                                                            }
+                                                        }}
+                                                    />
+                                                </td>
                                             </td>
                                             <td className="p-2">
                                                 <Input

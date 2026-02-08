@@ -12,11 +12,12 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Textarea } from '@/components/ui/textarea';
 import { Plus, Trash, Save, CreditCard, ArrowLeft } from 'lucide-react';
-import { getEntities } from '@/lib/accounting-actions';
+import { createQuickAccount, getEntities } from '@/lib/accounting-actions';
 import { getInventoryItems } from '@/lib/inventory-actions';
 import { createPurchaseInvoice, type CreateInvoiceData, type PurchaseInvoiceItem } from '@/lib/purchase-actions';
 import { useToast } from '@/components/ui/use-toast';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+import { AccountSelector } from '@/components/accounting/AccountSelector';
 
 export default function CreatePurchaseInvoice() {
     const router = useRouter();
@@ -66,6 +67,26 @@ export default function CreatePurchaseInvoice() {
         }
     };
 
+    // Quick Create Supplier Handler
+    const handleCreateSupplier = async (name: string) => {
+        try {
+            const res = await createQuickAccount(name, 'supplier');
+            if (res.success && res.id) {
+                toast({ title: 'تم الإنشاء', description: `تم إنشاء المورد "${name}" بنجاح` });
+                // Refresh list
+                const newSuppliers = await getEntities('supplier');
+                setSuppliers(newSuppliers || []);
+                // Select new supplier
+                handleSupplierChange(res.id); // This will update form data
+            } else {
+                toast({ title: 'خطأ', description: res.error || 'فشل إنشاء المورد', variant: 'destructive' });
+            }
+        } catch (error) {
+            console.error(error);
+            toast({ title: 'خطأ', description: 'حدث خطأ أثناء الإنشاء', variant: 'destructive' });
+        }
+    };
+
     const handleAddItem = (item: PurchaseInvoiceItem) => {
         setFormData(prev => ({
             ...prev,
@@ -99,48 +120,46 @@ export default function CreatePurchaseInvoice() {
     };
 
     return (
-        <div className="space-y-6 max-w-5xl mx-auto pb-20">
-            {/* Header */}
-            <div className="flex items-center gap-4">
-                <Button variant="ghost" size="icon" onClick={() => router.back()}>
-                    <ArrowLeft className="h-5 w-5" />
-                </Button>
-                <div>
-                    <h1 className="text-2xl font-bold">فاتورة شراء جديدة</h1>
-                    <p className="text-slate-500">إدخال مشتريات للمخزون</p>
+        <div className="container mx-auto py-6 space-y-6" dir="rtl">
+            <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                    <Button variant="ghost" onClick={() => router.back()}>
+                        <ArrowLeft className="h-4 w-4 ml-2" />
+                        عودة
+                    </Button>
+                    <h1 className="text-3xl font-bold tracking-tight">فاتورة شراء جديدة</h1>
                 </div>
+                <Button onClick={handleSubmit} disabled={isLoading}>
+                    <Save className="ml-2 h-4 w-4" />
+                    {isLoading ? 'جاري الحفظ...' : 'حفظ الفاتورة'}
+                </Button>
             </div>
 
-            {/* Main Form */}
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                {/* Left Column: Invoice Details */}
-                <Card className="lg:col-span-2">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                {/* Main Info */}
+                <Card className="md:col-span-2">
                     <CardHeader>
-                        <CardTitle>بيانات الفاتورة والأصناف</CardTitle>
+                        <CardTitle>بيانات الفاتورة</CardTitle>
                     </CardHeader>
-                    <CardContent className="space-y-6">
-                        <div className="grid grid-cols-2 gap-4">
-                            <div className="space-y-2">
-                                <Label>المورد</Label>
-                                <Select onValueChange={handleSupplierChange}>
-                                    <SelectTrigger>
-                                        <SelectValue placeholder="اختر المورد" />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        {suppliers.map(s => (
-                                            <SelectItem key={s.id} value={s.id}>{s.name_ar}</SelectItem>
-                                        ))}
-                                    </SelectContent>
-                                </Select>
-                            </div>
-                            <div className="space-y-2">
-                                <Label>تاريخ الفاتورة</Label>
-                                <Input
-                                    type="date"
-                                    value={formData.invoiceDate}
-                                    onChange={e => setFormData({ ...formData, invoiceDate: e.target.value })}
-                                />
-                            </div>
+                    <CardContent className="grid grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                            <Label>المورد</Label>
+                            <AccountSelector
+                                accounts={suppliers}
+                                value={formData.supplierId}
+                                onChange={(val) => handleSupplierChange(val)}
+                                category="supplier"
+                                onCreate={handleCreateSupplier}
+                                placeholder="اختر المورد..."
+                            />
+                        </div>
+                        <div className="space-y-2">
+                            <Label>تاريخ الفاتورة</Label>
+                            <Input
+                                type="date"
+                                value={formData.invoiceDate}
+                                onChange={e => setFormData({ ...formData, invoiceDate: e.target.value })}
+                            />
                         </div>
 
                         <div className="grid grid-cols-2 gap-4">
@@ -283,7 +302,7 @@ export default function CreatePurchaseInvoice() {
                     </CardFooter>
                 </Card>
             </div>
-        </div>
+        </div >
     );
 }
 

@@ -408,11 +408,11 @@ export async function createInventoryAdjustment(data: {
 
     // Call RPC to create Journal Entry
     const { data: journalId, error: rpcError } = await supabaseAdmin.rpc('create_journal_entry_rpc', {
-        entry_date: adjustmentDate,
-        description: `تسوية مخزنية - ${data.type} - ${item.name_ar}`,
-        reference_type: 'inventory_adjustment',
-        reference_id: null, // Will be linked later if needed
-        lines: journalLines
+        p_entry_date: adjustmentDate,
+        p_description: `تسوية مخزنية - ${data.type} - ${item.name_ar}`,
+        p_reference_type: 'inventory_adjustment',
+        p_reference_id: null, // Will be linked later if needed
+        p_lines: journalLines
     });
 
     if (rpcError) throw new Error(`فشل إنشاء القيد المحاسبي: ${rpcError.message}`);
