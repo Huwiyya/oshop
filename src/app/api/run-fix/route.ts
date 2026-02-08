@@ -22,7 +22,7 @@ export async function GET() {
     const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    const sql = \`
+    const sql = `
     -- Master Financial Fix Script
 -- Goal: Ensure Level 4 (Analytical) Accounts exist and are used by default in all RPCs.
 
