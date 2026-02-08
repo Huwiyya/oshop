@@ -175,32 +175,32 @@ BEGIN
   -- Logic updates to Journals would go here if needed...
 END;
 $$;
-    \`;
+    `;
 
     const { error } = await supabase.rpc('exec_sql', { sql }); // Assuming exec_sql exists? 
     // If exec_sql doesn't exist, I can't run raw SQL easily via client.
     // However, I can use a direct postgres connection IF `pg` was installed, but it might not be.
     // Wait, the user has `atomic - financial - actions.sql` suggesting they run SQL via some tool or migration.
     // I will try to use the browser subagent to execute it in the Supabase SQL Editor if I can log in, or...
-    
+
     // Fallback: I will just use the `browser` tool to hit this endpoint if I can wrap it in a `postgres` call?
     // No, standard supabase client doesn't run raw SQL unless an RPC for it is exposed.
-    
+
     // ALTERNATIVE: Use the browser to open the app (if running) and trigger a hidden button? No.
-    
+
     // Best Bet: Create a migration file? I did that.
     // Since `psql` failed, and I cannot easily run raw SQL from node without `pg` and connection string.
     // I will use the `browser` tool to verify the fix works by TRYING the actions.
     // If the actions fail, I know the SQL didn't run.
-    
+
     // BUT the SQL contained the FIX for the RPCs. The RPCs won't be updated unless I run the SQL.
     // I MUST run the SQL.
-    
+
     // Let's assume there is a `postgres` tool or I can use the `browser` to use Supabase Dashboard.
     // But I don't have Supabase Dashboard credentials.
-    
+
     // CHECK: Does the project have a way to run migrations? `npm run migrate`?
     // Let's check `package.json`.
-    
+
     return NextResponse.json({ result: 'Script logic defined but raw execution requires exec_sql or psql.' });
 }
