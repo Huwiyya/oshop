@@ -44,11 +44,13 @@ async function fixItemsAccounts() {
 
         // If Level 3 exists, migrate items pointing to it
         if (acc3) {
-            const { error: updateError, count } = await supabaseAdmin
+            const { data: updatedData, error: updateError } = await supabaseAdmin
                 .from('inventory_items')
                 .update({ [col]: acc4.id })
                 .eq(col, acc3.id)
-                .select('id', { count: 'exact' });
+                .select('id');
+
+            const count = updatedData?.length || 0;
 
             if (updateError) console.error(`❌ Error migrating ${l3} -> ${l4}:`, updateError.message);
             else console.log(`✅ Migrated ${count} items from ${l3} to ${l4}.`);
@@ -61,11 +63,13 @@ async function fixItemsAccounts() {
         // If we set it to L4 here, we bypass the RPC default!
         // SO: We SHOULD update NULLs to L4 as well to be safe and "fix" it without running SQL if possible.
 
-        const { error: nullError, count: nullCount } = await supabaseAdmin
+        const { data: nullData, error: nullError } = await supabaseAdmin
             .from('inventory_items')
             .update({ [col]: acc4.id })
             .is(col, null)
-            .select('id', { count: 'exact' });
+            .select('id');
+
+        const nullCount = nullData?.length || 0;
 
         if (nullError) console.error(`❌ Error fixing NULLs for ${col}:`, nullError.message);
         else console.log(`✅ Fixed ${nullCount} items with NULL ${col} to ${l4}.`);
