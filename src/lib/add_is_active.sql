@@ -1,0 +1,2 @@
+
+ALTER TABLE accounts_v2 ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT true;

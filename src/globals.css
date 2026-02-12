@@ -1,0 +1,142 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 240 10% 99%;
+    --foreground: 224 71.4% 4.1%;
+
+    --card: 240 10% 100%;
+    --card-foreground: 224 71.4% 4.1%;
+
+    --popover: 240 10% 100%;
+    --popover-foreground: 224 71.4% 4.1%;
+
+    --primary: 32.8 93.1% 54.1%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 240 10% 96.1%;
+    --secondary-foreground: 224 71.4% 4.1%;
+
+    --muted: 240 10% 96.1%;
+    --muted-foreground: 215 20.2% 65.1%;
+
+    --accent: 240 10% 96.1%;
+    --accent-foreground: 224 71.4% 4.1%;
+
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 210 40% 98%;
+
+    --border: 240 10% 90%;
+    --input: 240 10% 92%;
+    --ring: 32.8 93.1% 54.1%;
+
+    --radius: 0.8rem;
+  }
+
+  .dark {
+    --background: 222 47% 11%;
+    --foreground: 210 40% 98%;
+    --card: 222 47% 14%;
+    --card-foreground: 210 40% 98%;
+    --popover: 222 47% 11%;
+    --popover-foreground: 210 40% 98%;
+    --primary: 33 93% 54%;
+    --primary-foreground: 222 47% 11%;
+    --secondary: 217 33% 25%;
+    --secondary-foreground: 210 40% 98%;
+    --muted: 217 33% 17%;
+    --muted-foreground: 215 20% 65%;
+    --accent: 217 33% 25%;
+    --accent-foreground: 210 40% 98%;
+    --destructive: 0 63% 31%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 217 33% 20%;
+    --input: 217 33% 18%;
+    --ring: 33 93% 54%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    font-family: var(--font-cairo), ui-sans-serif, system-ui, sans-serif;
+  }
+}
+
+/* General Print Styles */
+@media print {
+  body * {
+    visibility: hidden;
+  }
+
+  .printable-content,
+  .printable-content * {
+    visibility: visible;
+  }
+
+  .printable-content {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    padding: 0;
+  }
+
+  .no-print {
+    display: none !important;
+  }
+
+  body {
+    background: #fff !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  table {
+    page-break-inside: auto;
+  }
+
+  tr {
+    page-break-inside: avoid;
+    page-break-after: auto;
+  }
+
+  thead {
+    display: table-header-group;
+  }
+
+  tfoot {
+    display: table-footer-group;
+  }
+}
+
+
+/* Page-specific print styles for A5 landscape */
+@page {
+  size: A5 landscape;
+  margin: 0;
+}
+
+@media print {
+
+  .shipping-label-page,
+  .deposit-receipt-page,
+  .statement-page {
+    width: 210mm;
+    min-height: 148mm;
+    height: 100%;
+    margin: 0;
+    padding: 0;
+    font-size: 10pt;
+    box-shadow: none !important;
+    border: none !important;
+  }
+}

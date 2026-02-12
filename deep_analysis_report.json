@@ -1,0 +1,20 @@
+[
+  {
+    "category": "Transactions",
+    "severity": "medium",
+    "issue": "Found 1 treasury transactions linked to non-existent orders",
+    "recommendation": "These might be from deleted orders - verify if reversal happened"
+  },
+  {
+    "category": "Code Review",
+    "severity": "info",
+    "issue": "Potential race condition in concurrent order creation",
+    "recommendation": "Consider adding transaction locks or optimistic locking for balance updates"
+  },
+  {
+    "category": "Shein Cards",
+    "severity": "info",
+    "issue": "No Shein cards found in system",
+    "recommendation": "Add Shein cards if you use them for purchasing"
+  }
+]

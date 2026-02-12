@@ -1,0 +1,1 @@
+Please execute the updated src/lib/payroll-schema-v2.sql in your Supabase SQL Editor to add the missing payment_date column.
