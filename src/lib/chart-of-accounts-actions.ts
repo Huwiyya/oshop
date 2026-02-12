@@ -10,7 +10,7 @@ interface AccountWithChildren extends AccountV2 {
 
 type ActionResponse =
     | { success: true; data: AccountWithChildren[]; flatAccounts: AccountV2[] }
-    | { success: false; error: string; data?: never; flatAccounts?: never }
+    | { success: false; error: string }
 
 /**
  * Fetch Chart of Accounts with complete hierarchy
