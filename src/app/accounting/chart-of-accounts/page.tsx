@@ -247,7 +247,7 @@ export default function ChartOfAccountsPage() {
         try {
             const result = await getChartOfAccountsTree();
 
-            if (result.success && result.data) {
+            if (result.success) {
                 setAccounts(result.data);
                 setFlatAccounts(result.flatAccounts || result.data);
 
