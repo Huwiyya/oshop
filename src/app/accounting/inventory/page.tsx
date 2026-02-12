@@ -211,6 +211,9 @@ function DeleteItemDialog({ item, onSuccess }: { item: any, onSuccess: () => voi
 
 import { AccountSelector } from '@/components/accounting/AccountSelector';
 
+
+import { getChartOfAccountsTree } from '@/lib/chart-of-accounts-actions';
+
 function AddItemDialog({ onSuccess }: { onSuccess: () => void }) {
     const [open, setOpen] = useState(false);
     const [isLoading, setIsLoading] = useState(false);
@@ -219,13 +222,18 @@ function AddItemDialog({ onSuccess }: { onSuccess: () => void }) {
 
     useEffect(() => {
         if (open) {
-            getAllAccounts().then(data => setAllAccounts(data || []));
+            getChartOfAccountsTree().then(res => {
+                if (res.success) {
+                    setAllAccounts(res.flatAccounts || []);
+                }
+            });
         }
     }, [open]);
 
-    const revenueAccounts = allAccounts.filter(a => a.account_code.toString().startsWith('4') && !a.is_parent);
-    const expenseAccounts = allAccounts.filter(a => a.account_code.toString().startsWith('5') && !a.is_parent);
-    const assetAccounts = allAccounts.filter(a => a.account_code.toString().startsWith('1') && !a.is_parent);
+    // V2 Logic: Use 'code' and 'is_group'
+    const revenueAccounts = allAccounts.filter(a => a.code.toString().startsWith('4') && !a.is_group);
+    const expenseAccounts = allAccounts.filter(a => a.code.toString().startsWith('5') && !a.is_group);
+    const assetAccounts = allAccounts.filter(a => a.code.toString().startsWith('1') && !a.is_group);
 
     const [formData, setFormData] = useState<{
         item_code: string;
@@ -376,7 +384,7 @@ function AddItemDialog({ onSuccess }: { onSuccess: () => void }) {
                                     accounts={expenseAccounts}
                                     value={formData.cogs_account_id}
                                     onChange={(v) => setFormData({ ...formData, cogs_account_id: v })}
-                                    placeholder="الافتراضي (5100 - تكلفة مبيعات)"
+                                    placeholder="الافتراضي (5101 - تكلفة البضاعة المباعة)"
                                 />
                             </div>
                         )}

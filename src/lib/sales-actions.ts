@@ -16,7 +16,8 @@ export type SalesInvoiceItem = {
     unitPrice: number;
     total: number;
     description: string;
-    selectedLayerIds?: string[]; // Legacy specific, V2 FIFO handles this automatically usually, but we keep the field
+    selectedLayerIds?: string[]; // Legacy specific
+    cardNumber?: string; // Added for V2 Card Support
 };
 
 export type CreateSalesInvoiceData = {
@@ -91,7 +92,8 @@ export async function getSalesInvoice(id: string) {
             description: line.product_name || line.description || '',
             quantity: line.quantity,
             unitPrice: line.unit_price,
-            total: (line.quantity * line.unit_price)
+            total: (line.quantity * line.unit_price),
+            cardNumber: line.card_number
         })) || []
     };
 }

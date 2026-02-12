@@ -80,7 +80,8 @@ export async function createPurchaseInvoice(data: CreateInvoiceData) {
                 product_id: item.itemId,
                 description: item.description,
                 quantity: item.quantity,
-                unit_price: item.unitPrice
+                unit_price: item.unitPrice,
+                card_number: item.cardNumbers ? item.cardNumbers.join('\n') : undefined
             }))
         };
 

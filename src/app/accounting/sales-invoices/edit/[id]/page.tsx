@@ -242,6 +242,11 @@ export default function EditSalesInvoice({ params }: { params: Promise<{ id: str
                                                                 تم تحديد {item.selectedLayerIds.length} بطاقات
                                                             </span>
                                                         )}
+                                                        {item.cardNumber && (
+                                                            <span className="text-xs text-blue-600 font-mono mt-1 block">
+                                                                {item.cardNumber}
+                                                            </span>
+                                                        )}
                                                     </div>
                                                 </TableCell>
                                                 <TableCell>{item.quantity}</TableCell>

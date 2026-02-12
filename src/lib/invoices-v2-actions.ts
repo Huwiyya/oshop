@@ -234,6 +234,67 @@ export async function createPurchaseInvoiceV2(input: {
 
     revalidatePath('/accounting/purchases-v2');
     revalidatePath('/accounting/journal-v2');
+
+    // =========================================================================
+    // POST-PROCESSING: FIX CARD LAYERS (Since Trigger might not handle split)
+    // =========================================================================
+    // Fetch lines to check for card numbers
+    const { data: insertedLines } = await supabase
+        .from('purchase_invoice_lines_v2')
+        .select('*')
+        .eq('invoice_id', header.id);
+
+    if (insertedLines) {
+        for (const line of insertedLines) {
+            if (line.card_number && line.product_id) {
+                const cards = line.card_number.split('\n').filter((c: string) => c.trim() !== '');
+
+                if (cards.length > 0) {
+                    // 1. Delete the BULK layer created by trigger (if any)
+                    // The trigger creates a layer with source_id = invoice_id and product_id
+                    await supabase.from('inventory_layers_v2')
+                        .delete()
+                        .eq('source_id', header.id)
+                        .eq('source_type', 'purchase_invoice')
+                        .eq('product_id', line.product_id);
+
+                    // 2. Insert INDIVIDUAL layers for each card
+                    const layers = cards.map((c: string) => ({
+                        product_id: line.product_id,
+                        date: header.date,
+                        quantity: 1,
+                        remaining_quantity: 1,
+                        unit_cost: line.unit_price,
+                        source_type: 'purchase_invoice',
+                        source_id: header.id,
+                        card_number: c.trim()
+                    }));
+
+                    // 3. Handle Remainder (if quantity > cards)
+                    // If user bought 10 but provided 8 cards, we need 2 more items as bulk/unknown
+                    const remainder = line.quantity - layers.length;
+                    if (remainder > 0) {
+                        layers.push({
+                            product_id: line.product_id,
+                            date: header.date,
+                            quantity: remainder,
+                            remaining_quantity: remainder, // Start full
+                            unit_cost: line.unit_price,
+                            source_type: 'purchase_invoice',
+                            source_id: header.id,
+                            card_number: null
+                        });
+                    }
+
+                    if (layers.length > 0) {
+                        const { error: layerErr } = await supabase.from('inventory_layers_v2').insert(layers);
+                        if (layerErr) console.error('Error correcting layers for cards:', layerErr);
+                    }
+                }
+            }
+        }
+    }
+
     return { success: true, data: header };
 }
 
@@ -253,6 +314,21 @@ export async function deletePurchaseInvoiceV2(id: string) {
     revalidatePath('/accounting/purchases-v2');
     revalidatePath('/accounting/journal-v2');
     return { success: true };
+}
+
+export async function getPurchaseInvoiceV2(id: string) {
+    const { data, error } = await supabase
+        .from('purchase_invoices_v2')
+        .select(`
+            *,
+            supplier:supplier_account_id (name_ar, name_en),
+             lines:purchase_invoice_lines_v2 (*)
+        `)
+        .eq('id', id)
+        .single();
+
+    if (error) return { success: false, error: error.message };
+    return { success: true, data: data as InvoiceV2 };
 }
 
 export async function getSalesInvoiceV2(id: string) {

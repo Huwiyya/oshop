@@ -4,21 +4,47 @@ ALTER TABLE public.purchase_invoice_lines_v2 ADD COLUMN IF NOT EXISTS card_numbe
 ALTER TABLE public.sales_invoice_lines_v2 ADD COLUMN IF NOT EXISTS card_number TEXT;
 
 -- Update Purchase Inventory Trigger to capture card_number
+-- Update Purchase Inventory Trigger to capture card_number (and split into layers)
 CREATE OR REPLACE FUNCTION public.process_purchase_inventory_v2() RETURNS TRIGGER AS $$
-DECLARE v_line RECORD;
+DECLARE 
+    v_line RECORD;
+    v_card_text TEXT;
+    v_card_array TEXT[];
+    v_card TEXT;
 BEGIN
     IF NEW.status = 'posted' AND (OLD.status IS NULL OR OLD.status != 'posted') THEN
         FOR v_line IN SELECT * FROM public.purchase_invoice_lines_v2 WHERE invoice_id = NEW.id LOOP
             IF v_line.product_id IS NOT NULL THEN
-                -- Insert Layer with card_number
-                INSERT INTO public.inventory_layers_v2 (product_id, date, quantity, remaining_quantity, unit_cost, source_type, source_id, card_number)
-                VALUES (v_line.product_id, NEW.date, v_line.quantity, v_line.quantity, v_line.unit_price, 'purchase_invoice', NEW.id, v_line.card_number);
                 
-                -- Transaction (card_number not strictly needed in transaction history for calculation, but could be useful in notes or future column)
+                -- Check for card numbers (Split Logic)
+                IF v_line.card_number IS NOT NULL AND v_line.card_number != '' THEN
+                    -- Convert to array (handle newline)
+                    v_card_array := string_to_array(v_line.card_number, E'\n');
+                    
+                    FOREACH v_card IN ARRAY v_card_array LOOP
+                        -- Insert individual layer for each card
+                        -- Quantity 1, Cost = Unit Price based on line
+                        IF TRIM(v_card) != '' THEN
+                             INSERT INTO public.inventory_layers_v2 (product_id, date, quantity, remaining_quantity, unit_cost, source_type, source_id, card_number)
+                             VALUES (v_line.product_id, NEW.date, 1, 1, v_line.unit_price, 'purchase_invoice', NEW.id, TRIM(v_card));
+                        END IF;
+                    END LOOP;
+                    
+                    -- Update Product Quantity (Total)
+                    UPDATE public.products_v2 SET current_quantity = current_quantity + v_line.quantity WHERE id = v_line.product_id;
+                    
+                ELSE
+                    -- Standard Bulk Insert (No Cards)
+                    INSERT INTO public.inventory_layers_v2 (product_id, date, quantity, remaining_quantity, unit_cost, source_type, source_id, card_number)
+                    VALUES (v_line.product_id, NEW.date, v_line.quantity, v_line.quantity, v_line.unit_price, 'purchase_invoice', NEW.id, null);
+                    
+                    UPDATE public.products_v2 SET current_quantity = current_quantity + v_line.quantity WHERE id = v_line.product_id;
+                END IF;
+
+                -- Transaction Log (Keep as one aggregated transaction per line)
                 INSERT INTO public.inventory_transactions_v2 (product_id, date, transaction_type, quantity, unit_cost, source_type, source_id)
                 VALUES (v_line.product_id, NEW.date, 'purchase', v_line.quantity, v_line.unit_price, 'purchase_invoice', NEW.id);
-                
-                UPDATE public.products_v2 SET current_quantity = current_quantity + v_line.quantity WHERE id = v_line.product_id;
+
             END IF;
         END LOOP;
     END IF;
