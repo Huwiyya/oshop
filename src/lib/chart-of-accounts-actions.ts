@@ -1,3 +1,5 @@
+'use server'
+
 import { supabaseAdmin } from './supabase-admin'
 import type { AccountV2 } from './accounting-v2-types'
 import { unstable_noStore as noStore } from 'next/cache'
