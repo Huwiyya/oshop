@@ -1,5 +1,3 @@
-'use server'
-
 import { supabaseAdmin } from './supabase-admin'
 import type { AccountV2 } from './accounting-v2-types'
 import { unstable_noStore as noStore } from 'next/cache'
@@ -8,11 +6,15 @@ interface AccountWithChildren extends AccountV2 {
     children: AccountWithChildren[]
 }
 
+type ActionResponse =
+    | { success: true; data: AccountWithChildren[]; flatAccounts: AccountV2[] }
+    | { success: false; error: string; data?: never; flatAccounts?: never }
+
 /**
  * Fetch Chart of Accounts with complete hierarchy
  * Uses supabaseAdmin to bypass RLS and ensure all accounts are returned
  */
-export async function getChartOfAccountsTree() {
+export async function getChartOfAccountsTree(): Promise<ActionResponse> {
     noStore() // Prevent caching
 
     try {
