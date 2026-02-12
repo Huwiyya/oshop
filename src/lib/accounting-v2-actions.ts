@@ -972,7 +972,7 @@ export async function getProductsV2() {
 // =============================================================================
 
 export async function getAccountDetailsV2(id: string) {
-    const { data, error } = await supabase
+    const { data: account, error } = await supabase
         .from('accounts_v2')
         .select(`
             *,
@@ -981,18 +981,52 @@ export async function getAccountDetailsV2(id: string) {
         .eq('id', id)
         .single();
 
-    if (error) {
+    if (error || !account) {
         console.error('Error fetching account details:', error);
         return null;
     }
-    return data;
+
+    // Consolidated Balance Calculation
+    // Fetch all accounts in the hierarchy (starting with this account's code)
+    // This includes the account itself + all children
+    const { data: family } = await supabase
+        .from('accounts_v2')
+        .select('current_balance')
+        .ilike('code', `${account.code}%`);
+
+    if (family && family.length > 0) {
+        const total = family.reduce((sum, member) => sum + (Number(member.current_balance) || 0), 0);
+        account.current_balance = total;
+    }
+
+    return account;
 }
 
 export async function getAccountLedgerV2(accountId: string) {
+    // 1. Get Account Code to find children (Hierarchy)
+    const { data: account } = await supabase
+        .from('accounts_v2')
+        .select('code')
+        .eq('id', accountId)
+        .single();
+
+    if (!account) return [];
+
+    // 2. Find all account IDs associated with this code (Self + Children)
+    // Using simple prefix match. E.g. '121' matches '121', '12101', '121-01'
+    const { data: accounts } = await supabase
+        .from('accounts_v2')
+        .select('id')
+        .ilike('code', `${account.code}%`);
+
+    const accountIds = accounts?.map(a => a.id) || [accountId];
+
+    // 3. Fetch Ledger
     const { data, error } = await supabase
         .from('journal_lines_v2')
         .select(`
             *,
+            account:account_id (name_ar, code),
             journal_entries:journal_id (
                 id,
                 entry_number,
@@ -1003,7 +1037,7 @@ export async function getAccountLedgerV2(accountId: string) {
                 created_at
             )
         `)
-        .eq('account_id', accountId)
+        .in('account_id', accountIds)
         .order('created_at', { ascending: false });
 
     if (error) {
